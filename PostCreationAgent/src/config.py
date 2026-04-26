@@ -6,7 +6,7 @@ load_dotenv()
 
 BASE_DIR = Path(__file__).parent.parent
 REFERENCE_DIR = BASE_DIR / "ideas"
-OUTPUT_DIR = BASE_DIR / "output"
+OUTPUT_DIR = BASE_DIR / "postCreated"
 OUTPUT_DIR.mkdir(exist_ok=True)
 
 # LLM Configuration (free tier — Google Gemini)
