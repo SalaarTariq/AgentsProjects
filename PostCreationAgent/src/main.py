@@ -100,6 +100,42 @@ def cmd_analyze(agent: PostCreationAgent):
     console.print(table)
 
 
+def cmd_design(agent: PostCreationAgent):
+    console.print("\n[bold cyan]Design Minimal Post[/]\n")
+    console.print("[dim]Enter the text lines for your post. Empty line to finish.[/]\n")
+
+    lines = []
+    while True:
+        line = Prompt.ask(f"  Line {len(lines) + 1} (empty to finish)", default="")
+        if not line.strip():
+            break
+        lines.append(line.strip())
+
+    if not lines:
+        console.print("[red]No text lines provided.[/]")
+        return
+
+    tagline = Prompt.ask("Tagline (optional, press Enter to skip)", default="")
+    tagline = tagline.strip() or None
+
+    theme = Prompt.ask("Theme", choices=["light", "dark"], default="light")
+
+    highlight = -2
+    if Confirm.ask("Highlight a specific line in accent color?", default=False):
+        highlight = IntPrompt.ask(f"  Which line (1-{len(lines)})", default=len(lines))
+        highlight = highlight - 1  # convert to 0-indexed
+
+    paths = agent.design_post(
+        lines=lines,
+        tagline=tagline,
+        theme=theme,
+        highlight_line=highlight,
+    )
+
+    if paths:
+        console.print(f"\n[bold green]Post created: {paths[0]}[/]")
+
+
 def cmd_batch(agent: PostCreationAgent):
     console.print("\n[bold cyan]Batch Post Creation[/]\n")
     console.print("[dim]Enter prompts one per line. Empty line to finish.[/]\n")
@@ -141,6 +177,8 @@ def main():
         command = sys.argv[1].lower()
         if command == "create":
             cmd_create(agent)
+        elif command == "design":
+            cmd_design(agent)
         elif command == "preview":
             cmd_preview(agent)
         elif command == "analyze":
@@ -165,12 +203,14 @@ def main():
         console.print()
         choice = Prompt.ask(
             "[bold magenta]Command[/]",
-            choices=["create", "preview", "analyze", "batch", "status", "help", "quit"],
+            choices=["create", "design", "preview", "analyze", "batch", "status", "help", "quit"],
             default="create",
         )
 
         if choice == "create":
             cmd_create(agent)
+        elif choice == "design":
+            cmd_design(agent)
         elif choice == "preview":
             cmd_preview(agent)
         elif choice == "analyze":
@@ -189,6 +229,7 @@ def main():
 def show_help():
     console.print("\n[bold]Available Commands:[/]")
     console.print("  [cyan]create[/]   - Create a new post (full LangGraph pipeline)")
+    console.print("  [cyan]design[/]   - Design a minimal text post (you provide the lines)")
     console.print("  [cyan]preview[/]  - Generate images without publishing")
     console.print("  [cyan]analyze[/]  - Analyze brand style from reference images")
     console.print("  [cyan]batch[/]    - Create multiple posts at once")
