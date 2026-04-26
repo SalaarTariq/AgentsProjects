@@ -4,6 +4,7 @@ from src.state import AgentState
 from src.style_analyzer import StyleAnalyzer
 from src.image_generator import ImageGenerator, AllProvidersExhaustedError
 from src.image_processor import ImageProcessor
+from src.post_designer import PostDesigner
 from src.instagram_publisher import InstagramPublisher
 from src import config
 
@@ -196,6 +197,36 @@ def publish_node(state: AgentState) -> dict:
         "publish_result": {"success": False, "reason": "needs_public_hosting"},
         "status": "publish_needs_hosting",
     }
+
+
+def design_post_node(state: AgentState) -> dict:
+    """Generate a minimal branded post from user-provided text lines."""
+    console.print("\n[bold cyan]>> Node: Design Minimal Post[/]")
+
+    lines = state.get("design_lines", [])
+    if not lines:
+        return {"error": "No design lines provided", "status": "design_skipped"}
+
+    tagline = state.get("design_tagline")
+    theme = state.get("design_theme", "light")
+    highlight = state.get("design_highlight_line", -2)  # -2 = no highlight
+
+    designer = PostDesigner(theme=theme)
+
+    if highlight != -2:
+        path = designer.generate_accent_post(
+            lines=lines,
+            highlight_line=highlight,
+            tagline=tagline,
+        )
+    else:
+        path = designer.generate(
+            lines=lines,
+            tagline=tagline,
+        )
+
+    console.print(f"  [green]Designed post saved: {path}[/]")
+    return {"saved_paths": [path], "status": "post_designed"}
 
 
 def summary_node(state: AgentState) -> dict:

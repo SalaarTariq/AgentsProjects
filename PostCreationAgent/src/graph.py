@@ -8,6 +8,7 @@ from src.nodes import (
     process_images_node,
     save_images_node,
     publish_node,
+    design_post_node,
     summary_node,
 )
 
@@ -32,6 +33,7 @@ def should_publish(state: AgentState) -> str:
 
 
 def build_graph() -> StateGraph:
+    """Full AI-generated image pipeline."""
     graph = StateGraph(AgentState)
 
     graph.add_node("analyze_style", analyze_style_node)
@@ -43,34 +45,36 @@ def build_graph() -> StateGraph:
     graph.add_node("publish", publish_node)
     graph.add_node("summary", summary_node)
 
-    # START -> analyze brand style
     graph.add_edge(START, "analyze_style")
-
-    # analyze_style -> enhance_prompt + generate_caption (parallel-ish, sequential here)
     graph.add_edge("analyze_style", "enhance_prompt")
     graph.add_edge("enhance_prompt", "generate_caption")
-
-    # generate_caption -> conditional: generate images or bail
     graph.add_conditional_edges("generate_caption", should_generate)
-
-    # generate_images -> conditional: process or bail
     graph.add_conditional_edges("generate_images", should_process)
-
-    # process_images -> save_images
     graph.add_edge("process_images", "save_images")
-
-    # save_images -> conditional: publish or summary
     graph.add_conditional_edges("save_images", should_publish)
-
-    # publish -> summary
     graph.add_edge("publish", "summary")
+    graph.add_edge("summary", END)
 
-    # summary -> END
+    return graph
+
+
+def build_design_graph() -> StateGraph:
+    """Minimal post design pipeline — user provides text, gets branded post."""
+    graph = StateGraph(AgentState)
+
+    graph.add_node("design_post", design_post_node)
+    graph.add_node("summary", summary_node)
+
+    graph.add_edge(START, "design_post")
+    graph.add_edge("design_post", "summary")
     graph.add_edge("summary", END)
 
     return graph
 
 
 def compile_graph():
-    graph = build_graph()
-    return graph.compile()
+    return build_graph().compile()
+
+
+def compile_design_graph():
+    return build_design_graph().compile()
