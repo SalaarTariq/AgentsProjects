@@ -10,6 +10,12 @@ class AgentState(TypedDict, total=False):
     text_overlay: str
     enhance: bool
 
+    # Minimal post design (user-provided lines)
+    design_lines: list[str]
+    design_tagline: str
+    design_theme: str  # "light" or "dark"
+    design_highlight_line: int  # index of line to accent-color, -1 for none
+
     style_profile: StyleProfile
     enhanced_prompt: str
     caption: str
