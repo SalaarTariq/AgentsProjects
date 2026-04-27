@@ -2,6 +2,7 @@ from rich.console import Console
 from langchain_google_genai import ChatGoogleGenerativeAI
 from src.state import AgentState
 from src.style_analyzer import StyleAnalyzer
+from src.deep_style_analyzer import DeepStyleAnalyzer
 from src.image_generator import ImageGenerator, AllProvidersExhaustedError
 from src.image_processor import ImageProcessor
 from src.post_designer import PostDesigner
@@ -25,9 +26,67 @@ def _get_llm() -> ChatGoogleGenerativeAI:
 
 def analyze_style_node(state: AgentState) -> dict:
     console.print("\n[bold cyan]>> Node: Analyze Brand Style[/]")
-    analyzer = StyleAnalyzer(config.REFERENCE_DIR)
-    profile = analyzer.analyze_images()
-    return {"style_profile": profile, "status": "style_analyzed"}
+
+    pixel_analyzer = StyleAnalyzer(config.REFERENCE_DIR)
+    pixel_profile = pixel_analyzer.analyze_images()
+
+    result: dict = {"style_profile": pixel_profile, "status": "style_analyzed"}
+
+    if config.DEEP_STYLE_ENABLED:
+        try:
+            deep_analyzer = DeepStyleAnalyzer(
+                config.REFERENCE_DIR, model_name=config.CLIP_MODEL_NAME
+            )
+            deep_profile = deep_analyzer.analyze_all()
+            result["deep_style_profile"] = deep_profile
+            result["analysis_results"] = deep_profile.per_image
+            result["layout_template"] = deep_profile.layout_type
+            result["aggregated_style"] = {
+                "layout_type": deep_profile.layout_type,
+                "typography_style": deep_profile.typography_style,
+                "mood_keywords": deep_profile.mood_keywords,
+                "composition_tags": deep_profile.composition_tags,
+                "visual_hierarchy": deep_profile.visual_hierarchy,
+                "color_palette": deep_profile.color_palette,
+                "color_palette_description": deep_profile.color_palette_description,
+                "contrast_level": deep_profile.contrast_level,
+                "style_prompt_suffix": deep_profile.style_prompt_suffix,
+            }
+            result["status"] = "style_analyzed_deep"
+            console.print(f"  [green]Deep style: {deep_profile.layout_type} / {deep_profile.typography_style}[/]")
+            console.print(f"  [green]Mood: {', '.join(deep_profile.mood_keywords[:4])}[/]")
+        except Exception as exc:
+            console.print(f"  [yellow]Deep analysis failed ({exc}), using pixel-only.[/]")
+
+    return result
+
+
+def _build_style_context(state: AgentState) -> str:
+    """Build the richest style context available from state."""
+    agg = state.get("aggregated_style")
+    if agg:
+        lines = [
+            f"\nBrand visual identity (extracted from reference posts):",
+            f"  Layout pattern: {agg.get('layout_type', 'centered')}",
+            f"  Typography: {agg.get('typography_style', 'sans-serif')}",
+            f"  Visual hierarchy: {agg.get('visual_hierarchy', 'balanced')}",
+            f"  Mood/theme: {', '.join(agg.get('mood_keywords', [])[:5])}",
+            f"  Composition style: {', '.join(agg.get('composition_tags', [])[:5])}",
+            f"  Color palette: {agg.get('color_palette_description', 'neutral tones')}",
+            f"  Hex colors: {', '.join(agg.get('color_palette', [])[:4])}",
+            f"  Contrast: {agg.get('contrast_level', 'medium')}",
+        ]
+        return "\n".join(lines)
+
+    style = state.get("style_profile")
+    if style:
+        return (
+            f"\nBrand style: {style.style_prompt_suffix}"
+            f"\nColor palette: {', '.join(style.color_palette[:4])}"
+            f"\nStyle keywords: {', '.join(style.style_keywords[:5])}"
+        )
+
+    return ""
 
 
 def enhance_prompt_node(state: AgentState) -> dict:
@@ -35,15 +94,8 @@ def enhance_prompt_node(state: AgentState) -> dict:
 
     user_prompt = state["user_prompt"]
     post_type = state.get("post_type", "feed")
-    style = state.get("style_profile")
 
-    style_context = ""
-    if style:
-        style_context = (
-            f"\nBrand style: {style.style_prompt_suffix}"
-            f"\nColor palette: {', '.join(style.color_palette[:4])}"
-            f"\nStyle keywords: {', '.join(style.style_keywords[:5])}"
-        )
+    style_context = _build_style_context(state)
 
     dimension_map = {
         "feed": "1080x1080 square (1:1)",
@@ -60,8 +112,10 @@ def enhance_prompt_node(state: AgentState) -> dict:
         f"User's request: {user_prompt}\n"
         f"Image format: Instagram {post_type} post, {dimensions}\n"
         f"{style_context}\n\n"
-        f"Write ONLY the image generation prompt. Make it detailed, include composition, lighting, "
-        f"colors, style, mood. Keep brand consistency. Do NOT include any explanation, just the prompt. "
+        f"Create a detailed image generation prompt that faithfully reproduces the brand's visual "
+        f"identity described above. Specify the exact layout structure, color relationships, "
+        f"typography placement, mood, and composition in the prompt. "
+        f"Write ONLY the image generation prompt — no explanation. "
         f"End with: high quality, professional, sharp details, 4k"
     )
 
@@ -72,9 +126,25 @@ def enhance_prompt_node(state: AgentState) -> dict:
         return {"enhanced_prompt": enhanced, "status": "prompt_enhanced"}
     except Exception as e:
         console.print(f"  [yellow]LLM unavailable ({e}), using basic enhancement[/]")
-        basic = f"{user_prompt}, instagram {post_type} post, {dimensions}, professional design, high quality, sharp details"
-        if style:
-            basic += f", {style.style_prompt_suffix}"
+
+        agg = state.get("aggregated_style")
+        deep = state.get("deep_style_profile")
+        style = state.get("style_profile")
+
+        suffix = ""
+        if deep:
+            suffix = deep.style_prompt_suffix
+        elif agg:
+            suffix = agg.get("style_prompt_suffix", "")
+        elif style:
+            suffix = style.style_prompt_suffix
+
+        basic = (
+            f"{user_prompt}, instagram {post_type} post, {dimensions}, "
+            f"professional design, high quality, sharp details"
+        )
+        if suffix:
+            basic += f", {suffix}"
         return {"enhanced_prompt": basic, "status": "prompt_enhanced_fallback"}
 
 
