@@ -1,6 +1,7 @@
-from typing import TypedDict
+from typing import Any, TypedDict
 from pathlib import Path
 from src.style_analyzer import StyleProfile
+from src.deep_style_analyzer import DeepStyleProfile
 
 
 class AgentState(TypedDict, total=False):
@@ -16,7 +17,15 @@ class AgentState(TypedDict, total=False):
     design_theme: str  # "light" or "dark"
     design_highlight_line: int  # index of line to accent-color, -1 for none
 
+    # Pixel-level style (legacy KMeans colors)
     style_profile: StyleProfile
+
+    # Deep learning style analysis (CLIP-based)
+    deep_style_profile: DeepStyleProfile
+    aggregated_style: dict[str, Any]
+    analysis_results: list[dict[str, Any]]
+    layout_template: str
+
     enhanced_prompt: str
     caption: str
     hashtags: list[str]

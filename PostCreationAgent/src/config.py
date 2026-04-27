@@ -34,3 +34,7 @@ MAX_RETRIES = 3
 REQUEST_TIMEOUT = 120
 
 PROVIDER_PRIORITY = ["pollinations", "huggingface", "together", "stability"]
+
+# Deep style analysis (local CLIP model — no API cost)
+DEEP_STYLE_ENABLED = os.getenv("DEEP_STYLE", "true").lower() in ("1", "true", "yes")
+CLIP_MODEL_NAME = os.getenv("CLIP_MODEL", "openai/clip-vit-base-patch32")
