@@ -3,6 +3,7 @@ from rich.console import Console
 from src.state import AgentState
 from src.graph import compile_graph, compile_design_graph
 from src.style_analyzer import StyleAnalyzer
+from src.deep_style_analyzer import DeepStyleAnalyzer
 from src import config
 
 console = Console()
@@ -77,8 +78,18 @@ class PostCreationAgent:
 
     def analyze_brand(self):
         console.print("\n[bold cyan]Analyzing Brand Style...[/]\n")
-        analyzer = StyleAnalyzer(config.REFERENCE_DIR)
-        return analyzer.analyze_images()
+        pixel_profile = StyleAnalyzer(config.REFERENCE_DIR).analyze_images()
+
+        deep_profile = None
+        if config.DEEP_STYLE_ENABLED:
+            try:
+                deep_profile = DeepStyleAnalyzer(
+                    config.REFERENCE_DIR, model_name=config.CLIP_MODEL_NAME
+                ).analyze_all()
+            except Exception as exc:
+                console.print(f"[yellow]Deep analysis unavailable: {exc}[/]")
+
+        return pixel_profile, deep_profile
 
     def get_status(self) -> dict:
         from src.image_generator import ImageGenerator
@@ -94,4 +105,5 @@ class PostCreationAgent:
             "available_providers": providers,
             "output_dir": str(config.OUTPUT_DIR),
             "reference_images": len(list(config.REFERENCE_DIR.glob("*"))) if config.REFERENCE_DIR.exists() else 0,
+            "deep_style_enabled": config.DEEP_STYLE_ENABLED,
         }

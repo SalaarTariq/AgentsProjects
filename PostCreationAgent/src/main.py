@@ -28,6 +28,7 @@ def print_status(agent: PostCreationAgent):
     table.add_row("Instagram Connected", "[green]Yes[/]" if status["instagram_configured"] else "[yellow]No[/]")
     table.add_row("Image Providers", ", ".join(status["available_providers"]))
     table.add_row("Reference Images", str(status["reference_images"]))
+    table.add_row("Deep Style (CLIP)", "[green]Enabled[/]" if status.get("deep_style_enabled") else "[yellow]Disabled (set DEEP_STYLE=true)[/]")
     table.add_row("Output Directory", status["output_dir"])
     console.print(table)
 
@@ -86,18 +87,32 @@ def cmd_preview(agent: PostCreationAgent):
 
 def cmd_analyze(agent: PostCreationAgent):
     console.print("\n[bold cyan]Analyzing Brand Style[/]\n")
-    profile = agent.analyze_brand()
+    pixel_profile, deep_profile = agent.analyze_brand()
 
-    table = Table(title="Brand Style Profile", border_style="green")
+    table = Table(title="Pixel-Level Style Profile", border_style="green")
     table.add_column("Attribute", style="bold")
     table.add_column("Value")
 
-    table.add_row("Dominant Colors", ", ".join(profile.color_palette[:5]))
-    table.add_row("Brightness", f"{profile.avg_brightness:.2f}")
-    table.add_row("Contrast", profile.contrast_level)
-    table.add_row("Style Keywords", ", ".join(profile.style_keywords[:6]))
-    table.add_row("Style Prompt", profile.style_prompt_suffix[:80] + "...")
+    table.add_row("Dominant Colors", ", ".join(pixel_profile.color_palette[:5]))
+    table.add_row("Brightness", f"{pixel_profile.avg_brightness:.2f}")
+    table.add_row("Contrast", pixel_profile.contrast_level)
+    table.add_row("Style Keywords", ", ".join(pixel_profile.style_keywords[:6]))
+    table.add_row("Style Prompt", pixel_profile.style_prompt_suffix[:80] + "...")
     console.print(table)
+
+    if deep_profile is not None:
+        dt = Table(title="Deep Style Profile (CLIP)", border_style="magenta")
+        dt.add_column("Attribute", style="bold")
+        dt.add_column("Value")
+        dt.add_row("Layout", deep_profile.layout_type)
+        dt.add_row("Typography", deep_profile.typography_style)
+        dt.add_row("Visual Hierarchy", deep_profile.visual_hierarchy)
+        dt.add_row("Mood", ", ".join(deep_profile.mood_keywords[:5]))
+        dt.add_row("Composition", ", ".join(deep_profile.composition_tags[:5]))
+        dt.add_row("Color Description", deep_profile.color_palette_description)
+        dt.add_row("Images Analyzed", str(deep_profile.image_count))
+        dt.add_row("Style Prompt", deep_profile.style_prompt_suffix[:100] + "...")
+        console.print(dt)
 
 
 def cmd_design(agent: PostCreationAgent):
