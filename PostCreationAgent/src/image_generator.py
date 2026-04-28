@@ -1,9 +1,12 @@
+import base64
 import io
 import time
 import urllib.parse
+
 import requests
 from PIL import Image
 from rich.console import Console
+
 from src import config
 
 console = Console()
@@ -23,18 +26,19 @@ class ImageGenerator:
         self._failed_providers: set[str] = set()
 
     def _build_provider_list(self) -> list[dict]:
+        registry = {
+            "pollinations": (self._generate_pollinations, True),
+            "huggingface": (self._generate_huggingface, bool(config.HUGGINGFACE_API_KEY)),
+            "together": (self._generate_together, bool(config.TOGETHER_API_KEY)),
+            "stability": (self._generate_stability, bool(config.STABILITY_API_KEY)),
+        }
         providers = []
         for name in config.PROVIDER_PRIORITY:
-            if name == "pollinations":
-                providers.append({"name": "pollinations", "fn": self._generate_pollinations})
-            elif name == "huggingface" and config.HUGGINGFACE_API_KEY:
-                providers.append({"name": "huggingface", "fn": self._generate_huggingface})
-            elif name == "together" and config.TOGETHER_API_KEY:
-                providers.append({"name": "together", "fn": self._generate_together})
-            elif name == "stability" and config.STABILITY_API_KEY:
-                providers.append({"name": "stability", "fn": self._generate_stability})
-        if not any(p["name"] == "pollinations" for p in providers):
-            providers.insert(0, {"name": "pollinations", "fn": self._generate_pollinations})
+            fn, available = registry.get(name, (None, False))
+            if fn and available:
+                providers.append({"name": name, "fn": fn})
+        if not providers:
+            providers.append({"name": "pollinations", "fn": self._generate_pollinations})
         return providers
 
     def generate(self, prompt: str, count: int = 1, size: tuple = (1080, 1080)) -> list[Image.Image]:
@@ -137,7 +141,6 @@ class ImageGenerator:
                 img_response = requests.get(img_data["url"], timeout=60)
                 return Image.open(io.BytesIO(img_response.content)).convert("RGB")
             elif "b64_json" in img_data:
-                import base64
                 img_bytes = base64.b64decode(img_data["b64_json"])
                 return Image.open(io.BytesIO(img_bytes)).convert("RGB")
 
@@ -163,20 +166,11 @@ class ImageGenerator:
 
         return Image.open(io.BytesIO(response.content)).convert("RGB")
 
-    def _closest_aspect_ratio(self, size: tuple) -> str:
-        w, h = size
-        ratio = w / h
-        ratios = {
-            "1:1": 1.0,
-            "4:5": 0.8,
-            "5:4": 1.25,
-            "16:9": 1.78,
-            "9:16": 0.5625,
-            "3:2": 1.5,
-            "2:3": 0.667,
-        }
-        closest = min(ratios.items(), key=lambda x: abs(x[1] - ratio))
-        return closest[0]
+    @staticmethod
+    def _closest_aspect_ratio(size: tuple) -> str:
+        ratio = size[0] / size[1]
+        ratios = {"1:1": 1.0, "4:5": 0.8, "5:4": 1.25, "16:9": 1.78, "9:16": 0.5625, "3:2": 1.5, "2:3": 0.667}
+        return min(ratios, key=lambda k: abs(ratios[k] - ratio))
 
     def reset_failed_providers(self):
         self._failed_providers.clear()
