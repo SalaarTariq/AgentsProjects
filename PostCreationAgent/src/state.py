@@ -1,7 +1,11 @@
-from typing import Any, TypedDict
+from __future__ import annotations
+
+from typing import Any, TypedDict, TYPE_CHECKING
 from pathlib import Path
-from src.style_analyzer import StyleProfile
-from src.deep_style_analyzer import DeepStyleProfile
+
+if TYPE_CHECKING:
+    from src.style_analyzer import StyleProfile
+    from src.deep_style_analyzer import DeepStyleProfile
 
 
 class AgentState(TypedDict, total=False):
@@ -14,8 +18,8 @@ class AgentState(TypedDict, total=False):
     # Minimal post design (user-provided lines)
     design_lines: list[str]
     design_tagline: str
-    design_theme: str  # "light" or "dark"
-    design_highlight_line: int  # index of line to accent-color, -1 for none
+    design_theme: str  # light, dark, sage, cream, olive, forest, warm
+    design_highlight_line: int  # index of line to accent-color, -2 for none
 
     # Pixel-level style (legacy KMeans colors)
     style_profile: StyleProfile
