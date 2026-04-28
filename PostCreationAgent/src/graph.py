@@ -13,12 +13,6 @@ from src.nodes import (
 )
 
 
-def should_generate(state: AgentState) -> str:
-    if state.get("error"):
-        return "summary"
-    return "generate_images"
-
-
 def should_process(state: AgentState) -> str:
     images = state.get("generated_images", [])
     if not images:
@@ -30,6 +24,12 @@ def should_publish(state: AgentState) -> str:
     if state.get("publish_to_instagram"):
         return "publish"
     return "summary"
+
+
+def should_generate(state: AgentState) -> str:
+    if state.get("error"):
+        return "summary"
+    return "generate_images"
 
 
 def build_graph() -> StateGraph:

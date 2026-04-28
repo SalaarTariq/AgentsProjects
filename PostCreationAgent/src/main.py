@@ -133,7 +133,11 @@ def cmd_design(agent: PostCreationAgent):
     tagline = Prompt.ask("Tagline (optional, press Enter to skip)", default="")
     tagline = tagline.strip() or None
 
-    theme = Prompt.ask("Theme", choices=["light", "dark"], default="light")
+    theme = Prompt.ask(
+        "Theme",
+        choices=["light", "dark", "sage", "cream", "olive", "forest", "warm"],
+        default="light",
+    )
 
     highlight = -2
     if Confirm.ask("Highlight a specific line in accent color?", default=False):
