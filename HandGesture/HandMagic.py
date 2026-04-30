@@ -1,3 +1,4 @@
+# Fire Magic – Fixed Graphics
 # pip install opencv-python mediapipe numpy
 # Run: python HandMagic.py
 # Controls: 'q' to quit
@@ -29,13 +30,12 @@ FLICK_THRESHOLD = 35
 FLICK_DEBOUNCE = 0.3
 
 SHAPE_BASE_SPEED = 12
-SHAPE_LIFETIME = 1.5
-SHAPE_FADE_TIME = 0.5
+SHAPE_LIFETIME = 1.2
+SHAPE_FADE_TIME = 0.4
 MAX_SHAPES = 50
 
-PARTICLES_PER_SHAPE = 6
-MAX_PARTICLES = 200
-PARTICLE_LIFETIME_FRAMES = 18  # ~0.3s at 60fps
+MAX_PARTICLES = 300
+PARTICLE_LIFETIME = 0.4
 
 HAND_BONE_CONNECTIONS = [
     (0, 1), (1, 2), (2, 3), (3, 4),
@@ -54,123 +54,299 @@ FINGER_SHAPE_MAP = {
     "pinky": "star",
 }
 
-SHAPE_COLORS = {
-    "circle": (0, 0, 220),
-    "triangle": (0, 180, 0),
-    "square": (0, 230, 255),
-    "star": (255, 100, 255),
-    "fireball": (0, 100, 255),
-}
+# Flame colors: ONLY red, orange, yellow – NO GREEN
+COLOR_BRIGHT_YELLOW = (0, 255, 255)
+COLOR_YELLOW = (0, 230, 255)
+COLOR_ORANGE = (0, 165, 255)
+COLOR_RED = (0, 0, 255)
+COLOR_DARK_RED = (0, 0, 150)
+COLOR_WHITE_HOT = (200, 240, 255)
 
-FLAME_COLORS = [(0, 0, 255), (0, 80, 255), (0, 165, 255), (0, 200, 255), (0, 220, 255)]
+FLAME_BIRTH_COLORS = [COLOR_BRIGHT_YELLOW, COLOR_WHITE_HOT, COLOR_YELLOW]
+FLAME_MID_COLORS = [COLOR_ORANGE, (0, 120, 255), (0, 200, 255)]
+FLAME_END_COLORS = [COLOR_RED, COLOR_DARK_RED, (0, 50, 200)]
+
+SHADOW_OFFSET = 3
+SHADOW_ALPHA = 0.5
 
 
-# ─── Data classes ─────────────────────────────────────────────────────────────
+# ─── Particle ────────────────────────────────────────────────────────────────
+
+class Particle:
+    __slots__ = ['x', 'y', 'vx', 'vy', 'birth', 'lifetime', 'max_size', 'layer']
+
+    def __init__(self, x, y, vx, vy, lifetime, max_size, layer=1):
+        self.x = float(x)
+        self.y = float(y)
+        self.vx = float(vx)
+        self.vy = float(vy)
+        self.birth = time.time()
+        self.lifetime = lifetime
+        self.max_size = max_size
+        self.layer = layer  # 0=back(red), 1=mid(orange), 2=front(yellow)
+
+
+def particle_color_and_size(p, now):
+    age = now - p.birth
+    t = age / p.lifetime
+    if t >= 1.0:
+        return None, 0
+
+    size = max(1, int(p.max_size * (1.0 - t)))
+
+    if t < 0.25:
+        color = random.choice(FLAME_BIRTH_COLORS)
+    elif t < 0.6:
+        color = random.choice(FLAME_MID_COLORS)
+    else:
+        color = random.choice(FLAME_END_COLORS)
+
+    brightness = max(0.3, 1.0 - t * 0.7)
+    color = tuple(max(0, min(255, int(c * brightness))) for c in color)
+    return color, size
+
+
+# ─── Shape ───────────────────────────────────────────────────────────────────
 
 class Shape:
-    __slots__ = ['x', 'y', 'vx', 'vy', 'kind', 'color', 'birth', 'angle', 'size']
+    __slots__ = ['x', 'y', 'vx', 'vy', 'kind', 'birth', 'angle', 'size']
 
-    def __init__(self, x, y, vx, vy, kind, color, size):
+    def __init__(self, x, y, vx, vy, kind, size):
         self.x = float(x)
         self.y = float(y)
         self.vx = float(vx)
         self.vy = float(vy)
         self.kind = kind
-        self.color = color
         self.birth = time.time()
-        self.angle = random.uniform(0, 2 * math.pi)
+        self.angle = math.atan2(vy, vx)
         self.size = size
 
 
-class Particle:
-    __slots__ = ['x', 'y', 'vx', 'vy', 'life', 'max_life', 'size', 'color']
+# ─── Styled shape drawing ────────────────────────────────────────────────────
 
-    def __init__(self, x, y, vx, vy, life, size):
-        self.x = float(x)
-        self.y = float(y)
-        self.vx = float(vx)
-        self.vy = float(vy)
-        self.life = life
-        self.max_life = life
-        self.size = size
-        self.color = random.choice(FLAME_COLORS)
+def draw_drop_shadow(frame, draw_fn, offset=SHADOW_OFFSET):
+    overlay = frame.copy()
+    draw_fn(overlay, offset_x=offset, offset_y=offset, shadow=True)
+    cv2.addWeighted(overlay, SHADOW_ALPHA, frame, 1.0 - SHADOW_ALPHA, 0, frame)
 
 
-# ─── Drawing functions ────────────────────────────────────────────────────────
+def draw_circle_styled(frame, cx, cy, radius, alpha):
+    # Drop shadow
+    shadow_overlay = frame.copy()
+    cv2.circle(shadow_overlay, (cx + SHADOW_OFFSET, cy + SHADOW_OFFSET),
+               radius, (0, 0, 0), -1, cv2.LINE_AA)
+    cv2.addWeighted(shadow_overlay, SHADOW_ALPHA * alpha, frame, 1.0 - SHADOW_ALPHA * alpha, 0, frame)
 
-def draw_circle_shape(overlay, cx, cy, radius, color, alpha):
-    c = tuple(int(ch * alpha) for ch in color)
-    cv2.circle(overlay, (cx, cy), radius, c, -1, cv2.LINE_AA)
+    # Semi-transparent fill: deep red-orange
+    fill_overlay = frame.copy()
+    fill_color = (0, 40, 200)
+    cv2.circle(fill_overlay, (cx, cy), radius, fill_color, -1, cv2.LINE_AA)
+    cv2.addWeighted(fill_overlay, 0.6 * alpha, frame, 1.0 - 0.6 * alpha, 0, frame)
+
+    # White outline
+    outline_color = tuple(int(255 * alpha) for _ in range(3))
+    cv2.circle(frame, (cx, cy), radius, outline_color, 2, cv2.LINE_AA)
+
+    # Highlight dot (reflection)
+    hx = cx - radius // 3
+    hy = cy - radius // 3
+    highlight_r = max(1, radius // 4)
+    highlight_color = tuple(int(220 * alpha) for _ in range(3))
+    cv2.circle(frame, (hx, hy), highlight_r, highlight_color, -1, cv2.LINE_AA)
 
 
-def draw_triangle_shape(overlay, cx, cy, side, color, alpha, angle):
-    c = tuple(int(ch * alpha) for ch in color)
+def draw_triangle_styled(frame, cx, cy, size, alpha, angle):
+    # Isosceles triangle pointing in direction of motion
     pts = []
     for i in range(3):
         a = angle + i * (2 * math.pi / 3)
-        px = int(cx + side * 0.6 * math.cos(a))
-        py = int(cy + side * 0.6 * math.sin(a))
+        if i == 0:
+            r = size * 0.8  # tip is longer
+        else:
+            r = size * 0.55
+        px = int(cx + r * math.cos(a))
+        py = int(cy + r * math.sin(a))
         pts.append([px, py])
     pts_arr = np.array(pts, dtype=np.int32)
-    cv2.fillPoly(overlay, [pts_arr], c, cv2.LINE_AA)
+
+    # Shadow triangle offset
+    shadow_pts = np.array([[p[0] + SHADOW_OFFSET, p[1] + SHADOW_OFFSET] for p in pts], dtype=np.int32)
+    shadow_overlay = frame.copy()
+    cv2.fillPoly(shadow_overlay, [shadow_pts], (0, 0, 0), cv2.LINE_AA)
+    cv2.addWeighted(shadow_overlay, SHADOW_ALPHA * alpha, frame, 1.0 - SHADOW_ALPHA * alpha, 0, frame)
+
+    # Orange fill
+    fill_color = tuple(int(c * alpha) for c in (0, 130, 255))
+    cv2.fillPoly(frame, [pts_arr], fill_color, cv2.LINE_AA)
+
+    # Gold outline
+    outline_color = tuple(int(c * alpha) for c in (0, 215, 255))
+    cv2.polylines(frame, [pts_arr], True, outline_color, 2, cv2.LINE_AA)
 
 
-def draw_square_shape(overlay, cx, cy, size, color, alpha, angle):
-    c = tuple(int(ch * alpha) for ch in color)
+def draw_square_styled(frame, cx, cy, size, alpha, angle):
+    # Rotated square (diamond shape) – always 45 degrees rotated
+    rot_angle = angle + math.pi / 4
     half = size // 2
     corners = []
-    for dx, dy in [(-half, -half), (half, -half), (half, half), (-half, half)]:
-        rx = dx * math.cos(angle) - dy * math.sin(angle)
-        ry = dx * math.sin(angle) + dy * math.cos(angle)
+    for dx, dy in [(-half, 0), (0, -half), (half, 0), (0, half)]:
+        rx = dx * math.cos(rot_angle) - dy * math.sin(rot_angle)
+        ry = dx * math.sin(rot_angle) + dy * math.cos(rot_angle)
         corners.append([int(cx + rx), int(cy + ry)])
     pts_arr = np.array(corners, dtype=np.int32)
-    cv2.fillPoly(overlay, [pts_arr], c, cv2.LINE_AA)
+
+    # Shadow
+    shadow_pts = np.array([[p[0] + SHADOW_OFFSET, p[1] + SHADOW_OFFSET] for p in corners], dtype=np.int32)
+    shadow_overlay = frame.copy()
+    cv2.fillPoly(shadow_overlay, [shadow_pts], (0, 0, 0), cv2.LINE_AA)
+    cv2.addWeighted(shadow_overlay, SHADOW_ALPHA * alpha, frame, 1.0 - SHADOW_ALPHA * alpha, 0, frame)
+
+    # Dark blue fill
+    fill_color = tuple(int(c * alpha) for c in (150, 50, 10))
+    cv2.fillPoly(frame, [pts_arr], fill_color, cv2.LINE_AA)
+
+    # Cyan glow outline (drawn twice for glow effect)
+    glow_color = tuple(int(c * alpha * 0.4) for c in (255, 255, 0))
+    cv2.polylines(frame, [pts_arr], True, glow_color, 4, cv2.LINE_AA)
+    outline_color = tuple(int(c * alpha) for c in (255, 255, 0))
+    cv2.polylines(frame, [pts_arr], True, outline_color, 2, cv2.LINE_AA)
+
+    # Corner highlights
+    for corner in corners:
+        h_color = tuple(int(c * alpha) for c in (255, 255, 200))
+        cv2.circle(frame, (corner[0], corner[1]), 2, h_color, -1, cv2.LINE_AA)
 
 
-def draw_star_shape(overlay, cx, cy, outer_r, color, alpha, angle):
-    c = tuple(int(ch * alpha) for ch in color)
+def draw_star_styled(frame, cx, cy, outer_r, alpha, angle):
     inner_r = outer_r * 0.4
     pts = []
     for i in range(10):
-        a = angle + i * (math.pi / 5)
+        a = angle + i * (math.pi / 5) - math.pi / 2
         r = outer_r if i % 2 == 0 else inner_r
         pts.append([int(cx + r * math.cos(a)), int(cy + r * math.sin(a))])
     pts_arr = np.array(pts, dtype=np.int32)
-    cv2.fillPoly(overlay, [pts_arr], c, cv2.LINE_AA)
+
+    # Shadow
+    shadow_pts = np.array([[p[0] + SHADOW_OFFSET, p[1] + SHADOW_OFFSET] for p in pts], dtype=np.int32)
+    shadow_overlay = frame.copy()
+    cv2.fillPoly(shadow_overlay, [shadow_pts], (0, 0, 0), cv2.LINE_AA)
+    cv2.addWeighted(shadow_overlay, SHADOW_ALPHA * alpha, frame, 1.0 - SHADOW_ALPHA * alpha, 0, frame)
+
+    # Deep orange-red fill
+    fill_color = tuple(int(c * alpha) for c in (0, 80, 220))
+    cv2.fillPoly(frame, [pts_arr], fill_color, cv2.LINE_AA)
+
+    # Bright orange outline
+    outline_color = tuple(int(c * alpha) for c in (0, 165, 255))
+    cv2.polylines(frame, [pts_arr], True, outline_color, 2, cv2.LINE_AA)
 
 
-def draw_shape(overlay, shape, alpha):
+def draw_fireball_styled(frame, cx, cy, radius, alpha):
+    # Shadow
+    shadow_overlay = frame.copy()
+    cv2.circle(shadow_overlay, (cx + SHADOW_OFFSET, cy + SHADOW_OFFSET),
+               radius, (0, 0, 0), -1, cv2.LINE_AA)
+    cv2.addWeighted(shadow_overlay, SHADOW_ALPHA * alpha, frame, 1.0 - SHADOW_ALPHA * alpha, 0, frame)
+
+    # Outer red glow
+    outer_color = tuple(int(c * alpha * 0.5) for c in COLOR_RED)
+    cv2.circle(frame, (cx, cy), int(radius * 1.4), outer_color, -1, cv2.LINE_AA)
+
+    # Main body: dark red
+    body_color = tuple(int(c * alpha) for c in (0, 30, 200))
+    cv2.circle(frame, (cx, cy), radius, body_color, -1, cv2.LINE_AA)
+
+    # Inner orange core
+    inner_color = tuple(int(c * alpha) for c in COLOR_ORANGE)
+    cv2.circle(frame, (cx, cy), int(radius * 0.6), inner_color, -1, cv2.LINE_AA)
+
+    # Bright yellow center
+    center_color = tuple(int(c * alpha) for c in COLOR_BRIGHT_YELLOW)
+    cv2.circle(frame, (cx, cy), int(radius * 0.3), center_color, -1, cv2.LINE_AA)
+
+    # White-hot highlight
+    h_color = tuple(int(200 * alpha) for _ in range(3))
+    cv2.circle(frame, (cx - radius // 4, cy - radius // 4),
+               max(1, radius // 5), h_color, -1, cv2.LINE_AA)
+
+
+def draw_shape(frame, shape, alpha):
     cx, cy = int(shape.x), int(shape.y)
     kind = shape.kind
-    color = shape.color
     s = shape.size
 
     if kind == "circle":
-        draw_circle_shape(overlay, cx, cy, s, color, alpha)
+        draw_circle_styled(frame, cx, cy, s, alpha)
     elif kind == "triangle":
-        draw_triangle_shape(overlay, cx, cy, s, color, alpha, shape.angle)
+        draw_triangle_styled(frame, cx, cy, s, alpha, shape.angle)
     elif kind == "square":
-        draw_square_shape(overlay, cx, cy, s, color, alpha, shape.angle)
+        draw_square_styled(frame, cx, cy, s, alpha, shape.angle)
     elif kind == "star":
-        draw_star_shape(overlay, cx, cy, s, color, alpha, shape.angle)
+        draw_star_styled(frame, cx, cy, s, alpha, shape.angle)
     elif kind == "fireball":
-        draw_circle_shape(overlay, cx, cy, s, color, alpha)
-        draw_circle_shape(overlay, cx, cy, int(s * 0.6), (0, 200, 255), alpha * 0.8)
+        draw_fireball_styled(frame, cx, cy, s, alpha)
 
 
-def draw_glow(overlay, shape, alpha):
-    cx, cy = int(shape.x), int(shape.y)
-    glow_size = int(shape.size * 2.2)
-    glow_alpha = alpha * 0.25
-    c = tuple(int(ch * glow_alpha) for ch in shape.color)
-    cv2.circle(overlay, (cx, cy), glow_size, c, -1, cv2.LINE_AA)
+# ─── Particle spawning ──────────────────────────────────────────────────────
+
+def spawn_flame_particles(shape, particles, count):
+    for _ in range(count):
+        spread = 10 if shape.kind == "fireball" else 6
+        ox = random.uniform(-spread, spread)
+        oy = random.uniform(-spread, spread)
+
+        # Particles move opposite to shape direction with random drift
+        pvx = -shape.vx * random.uniform(0.15, 0.5) + random.uniform(-2.0, 2.0)
+        pvy = -shape.vy * random.uniform(0.15, 0.5) + random.uniform(-2.0, 2.0)
+
+        # Layered sizes: back=large red, mid=medium orange, front=small yellow
+        layer = random.choices([0, 1, 2], weights=[3, 4, 3])[0]
+        if layer == 0:
+            max_size = random.uniform(4, 6)
+        elif layer == 1:
+            max_size = random.uniform(2.5, 4)
+        else:
+            max_size = random.uniform(1, 2.5)
+
+        lifetime = PARTICLE_LIFETIME * random.uniform(0.7, 1.3)
+        particles.append(Particle(shape.x + ox, shape.y + oy, pvx, pvy,
+                                  lifetime, max_size, layer))
 
 
-def draw_particle(overlay, p):
-    alpha = max(0.0, p.life / p.max_life)
-    r = max(1, int(p.size * alpha))
-    c = tuple(int(ch * alpha) for ch in p.color)
-    cv2.circle(overlay, (int(p.x), int(p.y)), r, c, -1, cv2.LINE_AA)
+# ─── Particle drawing ────────────────────────────────────────────────────────
+
+def draw_particles(frame, particles, now):
+    for p in particles:
+        age = now - p.birth
+        t = age / p.lifetime
+        if t >= 1.0:
+            continue
+
+        size = max(1, int(p.max_size * (1.0 - t)))
+
+        # Color based on layer and age – strictly red/orange/yellow spectrum
+        if p.layer == 2:  # front: yellow -> orange
+            if t < 0.4:
+                color = COLOR_BRIGHT_YELLOW
+            else:
+                color = COLOR_ORANGE
+        elif p.layer == 1:  # middle: orange -> red
+            if t < 0.3:
+                color = COLOR_ORANGE
+            elif t < 0.7:
+                color = (0, 100, 255)  # red-orange
+            else:
+                color = COLOR_RED
+        else:  # back: red -> dark red
+            if t < 0.3:
+                color = COLOR_RED
+            else:
+                color = COLOR_DARK_RED
+
+        brightness = max(0.25, 1.0 - t * 0.75)
+        color = tuple(max(0, min(255, int(c * brightness))) for c in color)
+
+        cv2.circle(frame, (int(p.x), int(p.y)), size, color, -1, cv2.LINE_AA)
 
 
 # ─── Hand skeleton ────────────────────────────────────────────────────────────
@@ -180,16 +356,13 @@ def draw_hand(frame, landmarks, w, h):
     for a, b in HAND_BONE_CONNECTIONS:
         pa = (int(lm[a].x * w), int(lm[a].y * h))
         pb = (int(lm[b].x * w), int(lm[b].y * h))
-        cv2.line(frame, pa, pb, (200, 200, 200), 1, cv2.LINE_AA)
+        cv2.line(frame, pa, pb, (255, 255, 255), 1, cv2.LINE_AA)
     for tid in FINGERTIP_IDS:
         pt = (int(lm[tid].x * w), int(lm[tid].y * h))
-        cv2.circle(frame, pt, 5, (255, 255, 0), -1, cv2.LINE_AA)
+        cv2.circle(frame, pt, 5, (180, 105, 255), -1, cv2.LINE_AA)  # bright pink
 
-
-# ─── Cooldown indicator ──────────────────────────────────────────────────────
 
 def draw_cooldown(frame, x, y, progress):
-    """Draw a small arc showing cooldown progress (0 to 1)."""
     if progress >= 1.0:
         return
     radius = 12
@@ -206,10 +379,9 @@ def main():
         print("Error: cannot open webcam")
         return
 
-    window_name = "Hand Magic - Fire Shapes"
+    window_name = "Fire Magic - Fixed Graphics"
     cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
 
-    # Position history per fingertip: key = (hand_index, finger_index)
     pos_history = {}
     last_fire_time = {}
 
@@ -228,8 +400,8 @@ def main():
         if black_overlay is None:
             black_overlay = np.zeros((h, w, 3), dtype=np.uint8)
 
-        # Dark background blend to make effects pop
-        cv2.addWeighted(frame, 0.7, black_overlay, 0.3, 0, frame)
+        # Darken camera background so shapes/flames pop
+        cv2.addWeighted(frame, 0.6, black_overlay, 0.4, 0, frame)
 
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         results = hands.process(rgb)
@@ -254,7 +426,6 @@ def main():
                     if len(hist) < 2:
                         continue
 
-                    # Compute smoothed velocity (average last VELOCITY_SMOOTH frames)
                     vels = []
                     count = min(VELOCITY_SMOOTH, len(hist) - 1)
                     for vi in range(1, count + 1):
@@ -266,14 +437,12 @@ def main():
                     avg_vy = sum(v[1] for v in vels) / len(vels)
                     speed = math.hypot(avg_vx, avg_vy)
 
-                    # Cooldown indicator
                     last_t = last_fire_time.get(finger_key, 0)
                     elapsed = now - last_t
                     if elapsed < FLICK_DEBOUNCE:
                         progress = elapsed / FLICK_DEBOUNCE
                         draw_cooldown(frame, px, py, progress)
 
-                    # Flick detection
                     if speed > FLICK_THRESHOLD:
                         if elapsed >= FLICK_DEBOUNCE:
                             last_fire_time[finger_key] = now
@@ -284,7 +453,6 @@ def main():
 
                             fname = FINGER_NAMES[fi]
                             kind = FINGER_SHAPE_MAP[fname]
-                            color = SHAPE_COLORS[kind]
 
                             if kind == "fireball":
                                 size = random.randint(16, 22)
@@ -297,9 +465,14 @@ def main():
                             else:
                                 size = 12
 
-                            shapes.append(Shape(px, py, vx, vy, kind, color, size))
+                            new_shape = Shape(px, py, vx, vy, kind, size)
+                            shapes.append(new_shape)
 
-        # ── Update shapes and generate particles ─────────────────────────
+                            # Initial burst: 10-15 particles at spawn
+                            spawn_flame_particles(new_shape, particles,
+                                                  random.randint(10, 15))
+
+        # ── Update shapes ────────────────────────────────────────────────
         surviving_shapes = deque(maxlen=MAX_SHAPES)
         for s in shapes:
             age = now - s.birth
@@ -308,64 +481,38 @@ def main():
 
             s.x += s.vx
             s.y += s.vy
-            s.angle += 0.05
+            s.angle += 0.04
 
-            # Spawn flame particles trailing behind
-            num_p = PARTICLES_PER_SHAPE + (3 if s.kind == "fireball" else 0)
-            for _ in range(num_p):
-                if len(particles) >= MAX_PARTICLES:
-                    particles.popleft()
-                spread = 8 if s.kind == "fireball" else 5
-                ox = random.uniform(-spread, spread)
-                oy = random.uniform(-spread, spread)
-                pvx = -s.vx * random.uniform(0.1, 0.4) + random.uniform(-1.5, 1.5)
-                pvy = -s.vy * random.uniform(0.1, 0.4) + random.uniform(-1.5, 1.5)
-                ps = random.uniform(2, 5) if s.kind == "fireball" else random.uniform(1.5, 3.5)
-                particles.append(Particle(s.x + ox, s.y + oy, pvx, pvy,
-                                          PARTICLE_LIFETIME_FRAMES, ps))
+            # Continuous flame trail: 5 new particles per shape per frame
+            spawn_flame_particles(s, particles, 5)
 
             surviving_shapes.append(s)
         shapes = surviving_shapes
 
-        # ── Update particles ──────────────────────────────────────────────
+        # ── Update particles ─────────────────────────────────────────────
         surviving_particles = deque(maxlen=MAX_PARTICLES)
         for p in particles:
-            p.life -= 1
-            if p.life <= 0:
+            age = now - p.birth
+            if age >= p.lifetime:
                 continue
             p.x += p.vx
             p.y += p.vy
-            p.vx *= 0.95
-            p.vy *= 0.95
+            p.vx *= 0.94
+            p.vy *= 0.94
             surviving_particles.append(p)
         particles = surviving_particles
 
-        # ── Draw everything on overlay then blend ─────────────────────────
-        effects = np.zeros_like(frame)
+        # ── Draw particles (behind shapes) ───────────────────────────────
+        # Sort: back layer first, front layer last (painters algorithm)
+        sorted_particles = sorted(particles, key=lambda p: p.layer)
+        draw_particles(frame, sorted_particles, now)
 
-        # Draw particles first (behind shapes)
-        for p in particles:
-            draw_particle(effects, p)
-
-        # Draw shape glows
+        # ── Draw shapes ──────────────────────────────────────────────────
         for s in shapes:
             age = now - s.birth
             remaining = SHAPE_LIFETIME - age
             alpha = 1.0 if remaining > SHAPE_FADE_TIME else max(0, remaining / SHAPE_FADE_TIME)
-            draw_glow(effects, s, alpha)
-
-        # Draw shapes
-        for s in shapes:
-            age = now - s.birth
-            remaining = SHAPE_LIFETIME - age
-            alpha = 1.0 if remaining > SHAPE_FADE_TIME else max(0, remaining / SHAPE_FADE_TIME)
-            draw_shape(effects, s, alpha)
-
-        # Blend effects onto frame (additive-style)
-        mask = effects.astype(np.float32) / 255.0
-        frame_f = frame.astype(np.float32)
-        result = np.clip(frame_f + effects.astype(np.float32) * 1.2, 0, 255).astype(np.uint8)
-        frame = result
+            draw_shape(frame, s, alpha)
 
         cv2.imshow(window_name, frame)
 
