@@ -13,6 +13,9 @@ faiss-cpu = "*"
 pypdf = "*"
 sentence-transformers = "*"
 python-dotenv = "*"
+fastapi = "*"
+uvicorn = "*"
+python-multipart = "*"
 
 [dev-packages]
 
