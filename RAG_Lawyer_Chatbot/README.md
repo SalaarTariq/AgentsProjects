@@ -34,7 +34,17 @@ PDFs → PyPDFLoader → RecursiveCharacterTextSplitter
                langchain-huggingface faiss-cpu pypdf sentence-transformers python-dotenv
    ```
 
-3. Run the app:
+3. Run the app. Two frontends are available:
+
+   **FastAPI + HTML/CSS (recommended)** — clean, minimal, custom UI:
+
+   ```bash
+   uvicorn app:app --reload
+   ```
+
+   Then open <http://127.0.0.1:8000>.
+
+   **Streamlit (original)**:
 
    ```bash
    streamlit run frontend.py
@@ -52,7 +62,9 @@ PDFs → PyPDFLoader → RecursiveCharacterTextSplitter
 
 ## Files
 
-- `frontend.py` — Streamlit UI, chat history, source display.
+- `app.py` — FastAPI backend exposing `/api/upload`, `/api/ask`, `/api/reset`, `/api/status` and serving the static frontend.
+- `static/` — `index.html`, `styles.css`, `app.js` for the minimal HTML/CSS UI.
+- `frontend.py` — Streamlit UI (alternative).
 - `vector_database.py` — PDF loading, chunking, embeddings, FAISS index build/load/save.
 - `rag_pipeline.py` — Groq LLM + retriever + legal-domain prompt + RAG chain.
 

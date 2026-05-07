@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>AI Lawyer</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <main class="container">
+      <header class="header">
+        <h1>AI Lawyer</h1>
+        <p class="subtitle">Ask questions grounded in the legal PDFs you upload.</p>
+      </header>
+
+      <section class="panel" aria-label="Document management">
+        <div class="upload-row">
+          <label for="file-input" class="btn btn-secondary">
+            <span id="file-label">Choose PDFs</span>
+            <input id="file-input" type="file" accept="application/pdf" multiple hidden />
+          </label>
+          <button id="index-btn" class="btn btn-primary" disabled>Index documents</button>
+          <button id="reset-btn" class="btn btn-ghost">Clear session</button>
+        </div>
+        <p id="status-line" class="status" aria-live="polite"></p>
+      </section>
+
+      <section class="chat" id="chat" aria-live="polite"></section>
+
+      <form id="chat-form" class="composer">
+        <input
+          id="question"
+          type="text"
+          placeholder="Ask a question about your documents…"
+          autocomplete="off"
+          required
+        />
+        <button type="submit" class="btn btn-primary" id="send-btn">Ask</button>
+      </form>
+
+      <footer class="footer">
+        <small>Informational only. Not legal advice.</small>
+      </footer>
+    </main>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
