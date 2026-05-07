@@ -20,26 +20,14 @@ if "messages" not in st.session_state:
     st.session_state.messages = []
 
 uploaded_files = st.file_uploader(
-    "Upload one or more PDF or TXT files",
-    type=["pdf", "txt"],
+    "Upload one or more PDF files",
+    type="pdf",
     accept_multiple_files=True,
 )
 
-SAMPLE_DOCS_DIR = Path("sample_docs")
-sample_files = sorted(p for p in SAMPLE_DOCS_DIR.glob("*") if p.suffix.lower() in {".pdf", ".txt"}) if SAMPLE_DOCS_DIR.exists() else []
-selected_samples = st.multiselect(
-    "Or include bundled sample law texts",
-    options=[p.name for p in sample_files],
-    default=[],
-)
-
-col1, col2, col3 = st.columns([1, 1, 1])
+col1, col2 = st.columns([1, 1])
 with col1:
-    index_clicked = st.button(
-        "Index documents",
-        type="primary",
-        disabled=not (uploaded_files or selected_samples),
-    )
+    index_clicked = st.button("Index documents", type="primary", disabled=not uploaded_files)
 with col2:
     if st.button("Clear session"):
         st.session_state.vector_store = None
@@ -47,23 +35,18 @@ with col2:
         st.session_state.messages = []
         st.rerun()
 
-if index_clicked and (uploaded_files or selected_samples):
-    with st.spinner("Reading documents and building the vector index…"):
+if index_clicked and uploaded_files:
+    with st.spinner("Reading PDFs and building the vector index…"):
+        tmp_paths: list[Path] = []
         with tempfile.TemporaryDirectory() as tmpdir:
-            paths: list[Path] = []
-            names: list[str] = []
-            for uf in uploaded_files or []:
+            for uf in uploaded_files:
                 p = Path(tmpdir) / uf.name
                 p.write_bytes(uf.getvalue())
-                paths.append(p)
-                names.append(uf.name)
-            for name in selected_samples:
-                paths.append(SAMPLE_DOCS_DIR / name)
-                names.append(f"(sample) {name}")
+                tmp_paths.append(p)
             try:
-                st.session_state.vector_store = build_vector_store(paths)
-                st.session_state.indexed_files = names
-                st.success(f"Indexed {len(paths)} document(s).")
+                st.session_state.vector_store = build_vector_store(tmp_paths)
+                st.session_state.indexed_files = [uf.name for uf in uploaded_files]
+                st.success(f"Indexed {len(tmp_paths)} document(s).")
             except Exception as e:
                 st.error(f"Failed to index documents: {e}")
 
@@ -119,3 +102,4 @@ if prompt:
                     err = f"Error generating answer: {e}"
                     st.error(err)
                     st.session_state.messages.append({"role": "assistant", "content": err})
+
