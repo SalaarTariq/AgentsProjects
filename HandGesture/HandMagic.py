@@ -56,8 +56,7 @@ def landmark_to_px(landmark, w, h):
 def draw_hand_skeleton(frame, hand_lm, w, h):
     lm = hand_lm.landmark
     for a, b in HAND_BONES:
-        pa = landmark_to_px(lm[a], w, h)
-        pb = landmark_to_px(lm[b], w, h)
+        pa, pb = landmark_to_px(lm[a], w, h), landmark_to_px(lm[b], w, h)
         cv2.line(frame, pa, pb, (70, 70, 80), 1, cv2.LINE_AA)
 
 
@@ -112,22 +111,20 @@ def draw_beam(frame, p1, p2, color, intensity=1.0, branches=True):
 
     # Random forking branches
     if branches and random.random() < 0.7 * intensity:
-        n_branches = random.randint(1, 2)
-        for _ in range(n_branches):
-            idx = random.randint(2, len(main_path) - 3)
-            origin = main_path[idx]
+        for _ in range(random.randint(1, 2)):
+            origin = main_path[random.randint(2, len(main_path) - 3)]
             branch_len = random.uniform(20, 55) * intensity
-            angle = math.atan2(p2[1] - p1[1], p2[0] - p1[0])
-            angle += random.uniform(-1.0, 1.0)
+            base_angle = math.atan2(p2[1] - p1[1], p2[0] - p1[0])
+            angle = base_angle + random.uniform(-1.0, 1.0)
+            
             end = (
                 int(origin[0] + math.cos(angle) * branch_len),
                 int(origin[1] + math.sin(angle) * branch_len),
             )
             bsegs = max(3, int(branch_len / 10))
-            bpath = jittered_path(origin, end, bsegs, branch_len * 0.15)
-            barr = np.array(bpath, dtype=np.int32).reshape(-1, 1, 2)
-            cv2.polylines(frame, [barr], False, color, 2, cv2.LINE_AA)
-            cv2.polylines(frame, [barr], False, core_color, 1, cv2.LINE_AA)
+            bpath = np.array(jittered_path(origin, end, bsegs, branch_len * 0.15), dtype=np.int32).reshape(-1, 1, 2)
+            cv2.polylines(frame, [bpath], False, color, 2, cv2.LINE_AA)
+            cv2.polylines(frame, [bpath], False, core_color, 1, cv2.LINE_AA)
 
 
 def draw_endpoint_orb(frame, pt, color, base_radius=10, pulse=0.0):
@@ -184,11 +181,10 @@ def main():
                 for fi, tid in enumerate(TIP_IDS):
                     raw = landmark_to_px(hand_lm.landmark[tid], w, h)
                     key = (label, fi)
-                    if key in smoothed_tips:
-                        sx = SMOOTH_ALPHA * raw[0] + (1 - SMOOTH_ALPHA) * smoothed_tips[key][0]
-                        sy = SMOOTH_ALPHA * raw[1] + (1 - SMOOTH_ALPHA) * smoothed_tips[key][1]
-                    else:
-                        sx, sy = raw
+                    prev_sx, prev_sy = smoothed_tips.get(key, raw)
+                    sx = SMOOTH_ALPHA * raw[0] + (1 - SMOOTH_ALPHA) * prev_sx
+                    sy = SMOOTH_ALPHA * raw[1] + (1 - SMOOTH_ALPHA) * prev_sy
+                    
                     smoothed_tips[key] = (sx, sy)
                     tips[fi] = (int(sx), int(sy))
                 per_hand_tips[label] = tips
@@ -205,8 +201,8 @@ def main():
                 qkey = ("R", fi)
                 motion = 0.0
                 if pkey in prev_tips and qkey in prev_tips:
-                    motion = (math.hypot(p1[0] - prev_tips[pkey][0], p1[1] - prev_tips[pkey][1]) +
-                              math.hypot(p2[0] - prev_tips[qkey][0], p2[1] - prev_tips[qkey][1]))
+                    p1_prev, p2_prev = prev_tips[pkey], prev_tips[qkey]
+                    motion = math.dist(p1, p1_prev) + math.dist(p2, p2_prev)
                 prev_tips[pkey] = p1
                 prev_tips[qkey] = p2
 
@@ -241,13 +237,8 @@ def main():
                         (180, 180, 180), 2, cv2.LINE_AA)
 
         # Drop stale smoothed tips when hand disappears
-        active = set()
-        for label, tips in per_hand_tips.items():
-            for fi in tips:
-                active.add((label, fi))
-        for k in list(smoothed_tips.keys()):
-            if k not in active:
-                del smoothed_tips[k]
+        active_keys = {(label, fi) for label, tips in per_hand_tips.items() for fi in tips}
+        smoothed_tips = {k: v for k, v in smoothed_tips.items() if k in active_keys}
 
         cv2.imshow(window_name, frame)
         key = cv2.waitKey(1) & 0xFF
