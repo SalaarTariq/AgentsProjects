@@ -57,12 +57,10 @@ def landmark_to_px(landmark, w, h):
 def draw_hand_skeleton(frame, hand_lm, w, h):
     lm = hand_lm.landmark
     for a, b in HAND_BONES:
-        pa = landmark_to_px(lm[a], w, h)
-        pb = landmark_to_px(lm[b], w, h)
+        pa, pb = landmark_to_px(lm[a], w, h), landmark_to_px(lm[b], w, h)
         cv2.line(frame, pa, pb, (90, 90, 90), 1, cv2.LINE_AA)
-    for i in range(21):
-        pt = landmark_to_px(lm[i], w, h)
-        cv2.circle(frame, pt, 2, (180, 180, 180), -1, cv2.LINE_AA)
+    for point in lm:
+        cv2.circle(frame, landmark_to_px(point, w, h), 2, (180, 180, 180), -1, cv2.LINE_AA)
 
 
 def draw_glow_line(frame, p1, p2, color, core_thickness=3):
@@ -133,11 +131,10 @@ def main():
                 for fi, tid in enumerate(TIP_IDS):
                     raw = landmark_to_px(hand_lm.landmark[tid], w, h)
                     key = (label, fi)
-                    if key in smoothed_tips:
-                        sx = SMOOTH_ALPHA * raw[0] + (1 - SMOOTH_ALPHA) * smoothed_tips[key][0]
-                        sy = SMOOTH_ALPHA * raw[1] + (1 - SMOOTH_ALPHA) * smoothed_tips[key][1]
-                    else:
-                        sx, sy = raw
+                    prev_sx, prev_sy = smoothed_tips.get(key, raw)
+                    sx = SMOOTH_ALPHA * raw[0] + (1 - SMOOTH_ALPHA) * prev_sx
+                    sy = SMOOTH_ALPHA * raw[1] + (1 - SMOOTH_ALPHA) * prev_sy
+                    
                     smoothed_tips[key] = (sx, sy)
                     tips[fi] = (int(sx), int(sy))
                 per_hand_tips[label] = tips
@@ -188,13 +185,8 @@ def main():
                         (180, 180, 180), 2, cv2.LINE_AA)
 
         # Drop stale smoothed tips when hand disappears
-        active = set()
-        for label, tips in per_hand_tips.items():
-            for fi in tips:
-                active.add((label, fi))
-        for k in list(smoothed_tips.keys()):
-            if k not in active:
-                del smoothed_tips[k]
+        active_keys = {(label, fi) for label, tips in per_hand_tips.items() for fi in tips}
+        smoothed_tips = {k: v for k, v in smoothed_tips.items() if k in active_keys}
 
         if save_msg and now - save_msg_time < 2.0:
             cv2.putText(frame, save_msg, (10, h - 20),
