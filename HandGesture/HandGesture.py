@@ -3,29 +3,30 @@
 When both hands are visible, 5 lines appear connecting matching fingertips
 (thumb<->thumb, index<->index, ...). Each line's color hue is driven by its
 rotation angle, so turning the hands cycles colors through the rainbow.
-You can stretch the lines by moving hands apart.
 
 Requirements: pip install opencv-python mediapipe numpy
-Run: python HandGesture.py
-Controls: 's' = save snapshot, 'h' = toggle skeleton, 'q' = quit
+Run:          python HandGesture.py [--camera N]
+Controls:     's' = save snapshot, 'h' = toggle skeleton, 'q' = quit
 """
 
-import cv2
-import numpy as np
-import mediapipe as mp
+import argparse
+import colorsys
 import math
 import time
 
-mp_hands = mp.solutions.hands
-hands = mp_hands.Hands(
-    static_image_mode=False,
-    max_num_hands=2,
-    min_detection_confidence=0.6,
-    min_tracking_confidence=0.6,
-)
+import cv2
+import mediapipe as mp
+import numpy as np
 
-TIP_IDS = [4, 8, 12, 16, 20]
-FINGER_NAMES = ["thumb", "index", "middle", "ring", "pinky"]
+# ── Tunable constants ──────────────────────────────────────────────────────────
+SMOOTH_ALPHA    = 0.55   # EMA weight for new fingertip position (0=frozen, 1=raw)
+BG_DARKEN       = 0.78   # fraction of live frame kept (rest is darkened)
+MIN_DETECT_CONF = 0.6
+MIN_TRACK_CONF  = 0.6
+
+TIP_IDS           = [4, 8, 12, 16, 20]
+FINGER_NAMES      = ["thumb", "index", "middle", "ring", "pinky"]
+FINGER_HUE_OFFSETS = [0, 60, 120, 200, 280]  # per-finger hue offset (degrees)
 
 HAND_BONES = [
     (0, 1), (1, 2), (2, 3), (3, 4),
@@ -35,26 +36,20 @@ HAND_BONES = [
     (0, 17), (17, 18), (18, 19), (19, 20),
     (5, 9), (9, 13), (13, 17),
 ]
-
-SMOOTH_ALPHA = 0.55  # exponential smoothing for fingertip positions
-
-# Per-finger hue offset (degrees) so the 5 lines aren't identical at angle 0
-FINGER_HUE_OFFSETS = [0, 60, 120, 200, 280]
+# ──────────────────────────────────────────────────────────────────────────────
 
 
-def hsv_to_bgr(h_deg, s=1.0, v=1.0):
-    """Convert HSV (h in degrees 0-360) to BGR uint8 tuple."""
-    h = (h_deg % 360) / 2.0  # OpenCV H is 0-179
-    hsv = np.uint8([[[int(h), int(s * 255), int(v * 255)]]])
-    bgr = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)[0, 0]
-    return int(bgr[0]), int(bgr[1]), int(bgr[2])
+def hsv_to_bgr(h_deg: float, s: float = 1.0, v: float = 1.0) -> tuple:
+    """HSV (h in degrees 0-360) → BGR uint8 tuple. Uses colorsys — no numpy overhead."""
+    r, g, b = colorsys.hsv_to_rgb((h_deg / 360.0) % 1.0, s, v)
+    return int(b * 255), int(g * 255), int(r * 255)
 
 
-def landmark_to_px(landmark, w, h):
-    return (int(landmark.x * w), int(landmark.y * h))
+def landmark_to_px(landmark, w: int, h: int) -> tuple:
+    return int(landmark.x * w), int(landmark.y * h)
 
 
-def draw_hand_skeleton(frame, hand_lm, w, h):
+def draw_hand_skeleton(frame, overlay, hand_lm, w: int, h: int) -> None:
     lm = hand_lm.landmark
     for a, b in HAND_BONES:
         pa, pb = landmark_to_px(lm[a], w, h), landmark_to_px(lm[b], w, h)
@@ -63,13 +58,15 @@ def draw_hand_skeleton(frame, hand_lm, w, h):
         cv2.circle(frame, landmark_to_px(point, w, h), 2, (180, 180, 180), -1, cv2.LINE_AA)
 
 
-def draw_glow_line(frame, p1, p2, color, core_thickness=3):
-    """Multi-pass glow line: wide faint outer, medium mid, bright core."""
-    overlay = frame.copy()
+def draw_glow_line(frame, overlay, p1, p2, color, core_thickness: int = 3) -> None:
+    """Multi-pass glow: wide faint outer → medium mid → bright core.
+    Reuses a pre-allocated overlay buffer to avoid repeated frame.copy() calls.
+    """
+    np.copyto(overlay, frame)
     cv2.line(overlay, p1, p2, color, core_thickness + 14, cv2.LINE_AA)
     cv2.addWeighted(overlay, 0.18, frame, 0.82, 0, frame)
 
-    overlay = frame.copy()
+    np.copyto(overlay, frame)
     cv2.line(overlay, p1, p2, color, core_thickness + 7, cv2.LINE_AA)
     cv2.addWeighted(overlay, 0.35, frame, 0.65, 0, frame)
 
@@ -78,8 +75,8 @@ def draw_glow_line(frame, p1, p2, color, core_thickness=3):
     cv2.line(frame, p1, p2, bright, core_thickness, cv2.LINE_AA)
 
 
-def draw_endpoint_node(frame, pt, color, radius=8):
-    overlay = frame.copy()
+def draw_endpoint_node(frame, overlay, pt, color, radius: int = 8) -> None:
+    np.copyto(overlay, frame)
     cv2.circle(overlay, pt, radius + 6, color, -1, cv2.LINE_AA)
     cv2.addWeighted(overlay, 0.35, frame, 0.65, 0, frame)
     cv2.circle(frame, pt, radius, color, -1, cv2.LINE_AA)
@@ -87,127 +84,146 @@ def draw_endpoint_node(frame, pt, color, radius=8):
     cv2.circle(frame, pt, max(1, radius // 2), bright, -1, cv2.LINE_AA)
 
 
-def main():
-    cap = cv2.VideoCapture(0)
+def main() -> None:
+    parser = argparse.ArgumentParser(description="HandGesture — finger connection lines")
+    parser.add_argument("--camera", type=int, default=0, help="Camera device index (default: 0)")
+    args = parser.parse_args()
+
+    cap = cv2.VideoCapture(args.camera)
     if not cap.isOpened():
-        print("Error: cannot open webcam")
+        print(f"Error: cannot open camera {args.camera}")
         return
+
+    hands = mp.solutions.hands.Hands(
+        static_image_mode=False,
+        max_num_hands=2,
+        min_detection_confidence=MIN_DETECT_CONF,
+        min_tracking_confidence=MIN_TRACK_CONF,
+    )
 
     window_name = "HandGesture - Finger Lines"
     cv2.namedWindow(window_name, cv2.WINDOW_AUTOSIZE)
 
-    smoothed_tips = {}  # (label, fi) -> (x, y) smoothed
-    show_skeleton = True
-    save_msg = ""
-    save_msg_time = 0.0
+    smoothed_tips: dict = {}
+    show_skeleton       = True
+    save_msg            = ""
+    save_msg_time       = 0.0
 
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        frame = cv2.flip(frame, 1)
-        h, w, _ = frame.shape
+    # Allocated on first frame once dimensions are known
+    overlay = None
+    black   = None
 
-        rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        results = hands.process(rgb)
-        now = time.time()
+    fps       = 0.0
+    prev_time = time.time()
 
-        # Slightly darken background so glows pop
-        frame = cv2.addWeighted(frame, 0.78, np.zeros_like(frame), 0.22, 0)
+    try:
+        while True:
+            ret, frame = cap.read()
+            if not ret:
+                break
+            frame = cv2.flip(frame, 1)
+            h, w, _ = frame.shape
 
-        per_hand_tips = {}  # "Left"/"Right" -> {fi: (x,y)}
+            # One-time buffer allocation
+            if overlay is None:
+                overlay = np.empty_like(frame)
+                black   = np.zeros_like(frame)
 
-        if results.multi_hand_landmarks and results.multi_handedness:
-            for hand_lm, hand_info in zip(results.multi_hand_landmarks,
-                                          results.multi_handedness):
-                raw_label = hand_info.classification[0].label
-                # Mirror flip means we invert the label
-                label = "Right" if raw_label == "Left" else "Left"
+            now       = time.time()
+            fps       = 0.9 * fps + 0.1 / max(now - prev_time, 1e-6)
+            prev_time = now
 
-                if show_skeleton:
-                    draw_hand_skeleton(frame, hand_lm, w, h)
+            rgb     = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            results = hands.process(rgb)
 
-                tips = {}
-                for fi, tid in enumerate(TIP_IDS):
-                    raw = landmark_to_px(hand_lm.landmark[tid], w, h)
-                    key = (label, fi)
-                    prev_sx, prev_sy = smoothed_tips.get(key, raw)
-                    sx = SMOOTH_ALPHA * raw[0] + (1 - SMOOTH_ALPHA) * prev_sx
-                    sy = SMOOTH_ALPHA * raw[1] + (1 - SMOOTH_ALPHA) * prev_sy
-                    
-                    smoothed_tips[key] = (sx, sy)
-                    tips[fi] = (int(sx), int(sy))
-                per_hand_tips[label] = tips
+            # Darken background so glows pop (reuses pre-alloc'd black)
+            cv2.addWeighted(frame, BG_DARKEN, black, 1.0 - BG_DARKEN, 0, frame)
 
-        # Draw the 5 connecting lines when both hands present
-        if "Left" in per_hand_tips and "Right" in per_hand_tips:
-            left_tips = per_hand_tips["Left"]
-            right_tips = per_hand_tips["Right"]
+            per_hand_tips: dict = {}
 
-            for fi in range(5):
-                if fi not in left_tips or fi not in right_tips:
-                    continue
-                p1 = left_tips[fi]
-                p2 = right_tips[fi]
+            if results.multi_hand_landmarks and results.multi_handedness:
+                for hand_lm, hand_info in zip(results.multi_hand_landmarks,
+                                              results.multi_handedness):
+                    raw_label = hand_info.classification[0].label
+                    label     = "Right" if raw_label == "Left" else "Left"
 
-                dx = p2[0] - p1[0]
-                dy = p2[1] - p1[1]
-                length = math.hypot(dx, dy)
-                # Angle in degrees, full 0-360 by mapping symmetric line to unique direction
-                # Use atan2 doubled so 180-degree flips don't change color (line is undirected)
-                angle_rad = math.atan2(dy, dx)
-                angle_deg = math.degrees(angle_rad * 2.0)
-                hue = (angle_deg + FINGER_HUE_OFFSETS[fi]) % 360
+                    if show_skeleton:
+                        draw_hand_skeleton(frame, overlay, hand_lm, w, h)
 
-                color = hsv_to_bgr(hue, s=1.0, v=1.0)
+                    tips = {}
+                    for fi, tid in enumerate(TIP_IDS):
+                        raw                = landmark_to_px(hand_lm.landmark[tid], w, h)
+                        key                = (label, fi)
+                        prev_sx, prev_sy   = smoothed_tips.get(key, raw)
+                        sx                 = SMOOTH_ALPHA * raw[0] + (1 - SMOOTH_ALPHA) * prev_sx
+                        sy                 = SMOOTH_ALPHA * raw[1] + (1 - SMOOTH_ALPHA) * prev_sy
+                        smoothed_tips[key] = (sx, sy)
+                        tips[fi]           = (int(sx), int(sy))
+                    per_hand_tips[label] = tips
 
-                # Thickness scales mildly with length so stretched lines feel taut
-                core = 2 + int(min(length, 600) / 200)
-                draw_glow_line(frame, p1, p2, color, core_thickness=core)
+            # Draw the 5 connecting lines when both hands present
+            if "Left" in per_hand_tips and "Right" in per_hand_tips:
+                left_tips  = per_hand_tips["Left"]
+                right_tips = per_hand_tips["Right"]
 
-                # Endpoint nodes
-                draw_endpoint_node(frame, p1, color, radius=7)
-                draw_endpoint_node(frame, p2, color, radius=7)
+                for fi in range(5):
+                    if fi not in left_tips or fi not in right_tips:
+                        continue
+                    p1, p2 = left_tips[fi], right_tips[fi]
 
-                # Finger label near midpoint
-                mx = (p1[0] + p2[0]) // 2
-                my = (p1[1] + p2[1]) // 2 - 10
-                cv2.putText(frame, FINGER_NAMES[fi], (mx - 22, my),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.45,
-                            (240, 240, 240), 1, cv2.LINE_AA)
+                    dx, dy = p2[0] - p1[0], p2[1] - p1[1]
+                    length = math.hypot(dx, dy)
 
-            cv2.putText(frame, "5 lines active", (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 180),
-                        2, cv2.LINE_AA)
-        else:
-            cv2.putText(frame, "Show both hands to connect fingers",
-                        (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                        (180, 180, 180), 2, cv2.LINE_AA)
+                    # atan2 doubled so 180° flips don't change color (line is undirected)
+                    hue   = (math.degrees(math.atan2(dy, dx) * 2.0) + FINGER_HUE_OFFSETS[fi]) % 360
+                    color = hsv_to_bgr(hue)
 
-        # Drop stale smoothed tips when hand disappears
-        active_keys = {(label, fi) for label, tips in per_hand_tips.items() for fi in tips}
-        smoothed_tips = {k: v for k, v in smoothed_tips.items() if k in active_keys}
+                    # Thickness scales with stretch so long lines feel taut
+                    core = 2 + int(min(length, 600) / 200)
+                    draw_glow_line(frame, overlay, p1, p2, color, core_thickness=core)
+                    draw_endpoint_node(frame, overlay, p1, color, radius=7)
+                    draw_endpoint_node(frame, overlay, p2, color, radius=7)
 
-        if save_msg and now - save_msg_time < 2.0:
-            cv2.putText(frame, save_msg, (10, h - 20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2, cv2.LINE_AA)
+                    mx = (p1[0] + p2[0]) // 2
+                    my = (p1[1] + p2[1]) // 2 - 10
+                    cv2.putText(frame, FINGER_NAMES[fi], (mx - 22, my),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (240, 240, 240), 1, cv2.LINE_AA)
 
-        cv2.imshow(window_name, frame)
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('q'):
-            break
-        elif key == ord('h'):
-            show_skeleton = not show_skeleton
-        elif key == ord('s'):
-            fname = f"hand_lines_{int(now)}.png"
-            cv2.imwrite(fname, frame)
-            save_msg = f"Saved {fname}"
-            save_msg_time = now
-            print(save_msg)
+                cv2.putText(frame, "5 lines active", (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 180), 2, cv2.LINE_AA)
+            else:
+                cv2.putText(frame, "Show both hands to connect fingers",
+                            (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
+                            (180, 180, 180), 2, cv2.LINE_AA)
 
-    cap.release()
-    cv2.destroyAllWindows()
-    hands.close()
+            # Prune smoothed positions for hands that have left the frame
+            active_keys   = {(lbl, fi) for lbl, tips in per_hand_tips.items() for fi in tips}
+            smoothed_tips = {k: v for k, v in smoothed_tips.items() if k in active_keys}
+
+            # HUD
+            cv2.putText(frame, f"FPS {fps:.0f}", (w - 80, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (160, 160, 160), 1, cv2.LINE_AA)
+            if save_msg and now - save_msg_time < 2.0:
+                cv2.putText(frame, save_msg, (10, h - 20),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2, cv2.LINE_AA)
+
+            cv2.imshow(window_name, frame)
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('q'):
+                break
+            elif key == ord('h'):
+                show_skeleton = not show_skeleton
+            elif key == ord('s'):
+                fname         = f"hand_lines_{int(now)}.png"
+                cv2.imwrite(fname, frame)
+                save_msg      = f"Saved {fname}"
+                save_msg_time = now
+                print(save_msg)
+
+    finally:
+        cap.release()
+        cv2.destroyAllWindows()
+        hands.close()
 
 
 if __name__ == "__main__":
