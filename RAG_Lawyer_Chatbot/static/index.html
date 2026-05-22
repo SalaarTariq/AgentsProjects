@@ -3,50 +3,99 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>AI Lawyer</title>
+    <title>Counsel — AI Lawyer</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
-      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/static/styles.css" />
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
   </head>
   <body>
-    <main class="container">
-      <header class="header">
-        <h1>AI Lawyer</h1>
-        <p class="subtitle">Ask questions grounded in the legal PDFs you upload.</p>
-      </header>
-
-      <section class="panel" aria-label="Document management">
-        <div class="upload-row">
-          <label for="file-input" class="btn btn-secondary">
-            <span id="file-label">Choose PDFs</span>
-            <input id="file-input" type="file" accept="application/pdf" multiple hidden />
-          </label>
-          <button id="index-btn" class="btn btn-primary" disabled>Index documents</button>
-          <button id="reset-btn" class="btn btn-ghost">Clear session</button>
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="brand-mark">§</div>
+        <div>
+          <div class="brand-name">Counsel</div>
+          <div class="brand-sub">AI Lawyer</div>
         </div>
+      </div>
+
+      <section class="side-section">
+        <div class="side-title">Case file</div>
+        <label for="file-input" class="btn btn-secondary block">
+          <span id="file-label">Upload PDFs / TXT</span>
+          <input id="file-input" type="file" accept=".pdf,.txt" multiple hidden />
+        </label>
+        <button id="index-btn" class="btn btn-primary block" disabled>Index documents</button>
+        <div id="samples-wrap" class="samples"></div>
         <p id="status-line" class="status" aria-live="polite"></p>
+        <ul id="indexed-list" class="indexed"></ul>
       </section>
 
-      <section class="chat" id="chat" aria-live="polite"></section>
+      <section class="side-section">
+        <div class="side-title">Mode</div>
+        <div class="mode-grid" role="radiogroup" aria-label="Answer mode">
+          <button class="mode-btn active" data-mode="brief">
+            <strong>Legal Brief</strong>
+            <span>IRAC + risk + next steps</span>
+          </button>
+          <button class="mode-btn" data-mode="quick">
+            <strong>Quick Answer</strong>
+            <span>Plain-English in seconds</span>
+          </button>
+          <button class="mode-btn" data-mode="drafting">
+            <strong>Drafting</strong>
+            <span>Clause / letter / motion</span>
+          </button>
+          <button class="mode-btn" data-mode="compare">
+            <strong>Compare</strong>
+            <span>Side-by-side analysis</span>
+          </button>
+        </div>
+      </section>
+
+      <section class="side-section">
+        <button id="clear-history-btn" class="btn btn-ghost block">Clear conversation</button>
+        <button id="reset-btn" class="btn btn-ghost block">New case file</button>
+      </section>
+
+      <div class="disclaimer">
+        Counsel provides informational analysis grounded in your documents.
+        It is not legal advice and does not create an attorney–client relationship.
+      </div>
+    </aside>
+
+    <main class="main">
+      <header class="header">
+        <h1>Counsel</h1>
+        <p class="subtitle">Senior-counsel reasoning, grounded in your case file.</p>
+      </header>
+
+      <section class="chat" id="chat" aria-live="polite">
+        <div class="empty-state" id="empty-state">
+          <p class="empty-lead">Upload a contract, statute, or pleading on the left, or pick a sample. Then ask anything.</p>
+          <div class="prompt-grid">
+            <button class="prompt-card" data-prompt="What is the governing law clause and what are its consequences?">Governing law clause</button>
+            <button class="prompt-card" data-prompt="Summarize the parties' material obligations and any conditions precedent.">Material obligations</button>
+            <button class="prompt-card" data-prompt="Identify termination rights and notice requirements.">Termination rights</button>
+            <button class="prompt-card" data-prompt="Flag any one-sided indemnification or limitation of liability provisions and rate exposure.">Indemnity & liability</button>
+          </div>
+        </div>
+      </section>
 
       <form id="chat-form" class="composer">
-        <input
+        <textarea
           id="question"
-          type="text"
-          placeholder="Ask a question about your documents…"
+          rows="1"
+          placeholder="Ask Counsel about the documents…  (Shift+Enter for newline)"
           autocomplete="off"
           required
-        />
+        ></textarea>
         <button type="submit" class="btn btn-primary" id="send-btn">Ask</button>
       </form>
-
-      <footer class="footer">
-        <small>Informational only. Not legal advice.</small>
-      </footer>
     </main>
 
     <script src="/static/app.js"></script>
