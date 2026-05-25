@@ -31,6 +31,22 @@ class TestProviderList:
 
     def test_reset_failed_providers(self):
         gen = ImageGenerator()
-        gen._failed_providers.add("pollinations")
+        gen._failed_providers["pollinations"] = 0.0
         gen.reset_failed_providers()
         assert len(gen._failed_providers) == 0
+
+    def test_provider_cooldown_expires(self):
+        import time
+        from src import image_generator as ig_mod
+
+        gen = ImageGenerator()
+        # Mark provider as failed 1 second after the cooldown horizon — should re-enable.
+        gen._failed_providers["pollinations"] = time.time() - (ig_mod.PROVIDER_COOLDOWN_SECONDS + 1)
+        assert gen._is_provider_on_cooldown("pollinations") is False
+        assert "pollinations" not in gen._failed_providers
+
+    def test_provider_cooldown_active(self):
+        gen = ImageGenerator()
+        import time
+        gen._failed_providers["pollinations"] = time.time()
+        assert gen._is_provider_on_cooldown("pollinations") is True

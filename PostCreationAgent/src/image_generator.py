@@ -20,10 +20,14 @@ class AllProvidersExhaustedError(Exception):
     pass
 
 
+PROVIDER_COOLDOWN_SECONDS = 120
+
+
 class ImageGenerator:
     def __init__(self):
         self.providers = self._build_provider_list()
-        self._failed_providers: set[str] = set()
+        # provider name -> unix timestamp when it became failed
+        self._failed_providers: dict[str, float] = {}
 
     def _build_provider_list(self) -> list[dict]:
         registry = {
@@ -53,9 +57,18 @@ class ImageGenerator:
                 console.print(f"[red]  Failed to generate image {i + 1}[/]")
         return images
 
+    def _is_provider_on_cooldown(self, name: str) -> bool:
+        failed_at = self._failed_providers.get(name)
+        if failed_at is None:
+            return False
+        if time.time() - failed_at >= PROVIDER_COOLDOWN_SECONDS:
+            del self._failed_providers[name]
+            return False
+        return True
+
     def _generate_single(self, prompt: str, size: tuple, seed_offset: int = 0) -> Image.Image | None:
         for provider in self.providers:
-            if provider["name"] in self._failed_providers:
+            if self._is_provider_on_cooldown(provider["name"]):
                 continue
             try:
                 console.print(f"  [dim]Trying {provider['name']}...[/]")
@@ -63,14 +76,22 @@ class ImageGenerator:
                 if img:
                     return img
             except ProviderExhaustedError:
-                console.print(f"  [yellow]{provider['name']} rate limit reached, trying next...[/]")
-                self._failed_providers.add(provider["name"])
+                console.print(
+                    f"  [yellow]{provider['name']} rate limit reached, "
+                    f"cooldown {PROVIDER_COOLDOWN_SECONDS}s, trying next...[/]"
+                )
+                self._failed_providers[provider["name"]] = time.time()
             except Exception as e:
                 console.print(f"  [yellow]{provider['name']} error: {e}, trying next...[/]")
         raise AllProvidersExhaustedError("All image generation providers have been exhausted.")
 
+    # Pollinations is a GET-based API: the prompt rides in the URL path,
+    # and CDNs/proxies in the chain reject URLs past a few KB. Cap before encoding.
+    _POLLINATIONS_PROMPT_LIMIT = 1500
+
     def _generate_pollinations(self, prompt: str, size: tuple, seed_offset: int = 0) -> Image.Image:
-        encoded = urllib.parse.quote(prompt)
+        truncated = prompt[: self._POLLINATIONS_PROMPT_LIMIT]
+        encoded = urllib.parse.quote(truncated)
         width, height = size
         seed = int(time.time()) + seed_offset
         url = (
@@ -83,8 +104,10 @@ class ImageGenerator:
         response.raise_for_status()
 
         content_type = response.headers.get("content-type", "")
-        if "image" not in content_type and len(response.content) < 1000:
-            raise ProviderExhaustedError("Pollinations returned non-image response")
+        if "image" not in content_type:
+            raise ProviderExhaustedError(
+                f"Pollinations returned non-image response (content-type={content_type!r})"
+            )
 
         return Image.open(io.BytesIO(response.content)).convert("RGB")
 
@@ -172,5 +195,5 @@ class ImageGenerator:
         ratios = {"1:1": 1.0, "4:5": 0.8, "5:4": 1.25, "16:9": 1.78, "9:16": 0.5625, "3:2": 1.5, "2:3": 0.667}
         return min(ratios, key=lambda k: abs(ratios[k] - ratio))
 
-    def reset_failed_providers(self):
+    def reset_failed_providers(self) -> None:
         self._failed_providers.clear()
