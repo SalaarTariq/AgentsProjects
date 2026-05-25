@@ -1,5 +1,4 @@
 from rich.console import Console
-from langchain_google_genai import ChatGoogleGenerativeAI
 from src.state import AgentState
 from src.style_analyzer import StyleAnalyzer
 from src.deep_style_analyzer import DeepStyleAnalyzer
@@ -16,7 +15,10 @@ _processor = ImageProcessor()
 _publisher = InstagramPublisher()
 
 
-def _get_llm() -> ChatGoogleGenerativeAI:
+def _get_llm():
+    """Lazy import: keeps the design pipeline runnable without langchain_google_genai installed."""
+    from langchain_google_genai import ChatGoogleGenerativeAI
+
     return ChatGoogleGenerativeAI(
         model=config.LLM_MODEL,
         google_api_key=config.GOOGLE_API_KEY,
@@ -24,24 +26,44 @@ def _get_llm() -> ChatGoogleGenerativeAI:
     )
 
 
+def _style_profile_from_deep(deep) -> "StyleProfile":
+    """Build a legacy StyleProfile from the deep profile's KMeans data,
+    so downstream code that reads state['style_profile'] always has values
+    without re-running KMeans on the same pixels.
+    """
+    from src.style_analyzer import StyleProfile
+
+    keywords = list(deep.mood_keywords) + [deep.layout_type, deep.typography_style]
+    return StyleProfile(
+        dominant_colors=list(deep.dominant_colors),
+        color_palette=list(deep.color_palette),
+        avg_brightness=deep.avg_brightness,
+        contrast_level=deep.contrast_level,
+        style_keywords=[k for k in keywords if k],
+        style_prompt_suffix=deep.style_prompt_suffix,
+    )
+
+
 def analyze_style_node(state: AgentState) -> dict:
     console.print("\n[bold cyan]>> Node: Analyze Brand Style[/]")
 
-    pixel_analyzer = StyleAnalyzer(config.REFERENCE_DIR)
-    pixel_profile = pixel_analyzer.analyze_images()
-
-    result: dict = {"style_profile": pixel_profile, "status": "style_analyzed"}
-
+    deep_profile = None
     if config.DEEP_STYLE_ENABLED:
         try:
             deep_analyzer = DeepStyleAnalyzer(
                 config.REFERENCE_DIR, model_name=config.CLIP_MODEL_NAME
             )
             deep_profile = deep_analyzer.analyze_all()
-            result["deep_style_profile"] = deep_profile
-            result["analysis_results"] = deep_profile.per_image
-            result["layout_template"] = deep_profile.layout_type
-            result["aggregated_style"] = {
+        except Exception as exc:
+            console.print(f"  [yellow]Deep analysis failed ({exc}), falling back to pixel-only.[/]")
+
+    if deep_profile is not None and deep_profile.image_count > 0:
+        result: dict = {
+            "style_profile": _style_profile_from_deep(deep_profile),
+            "deep_style_profile": deep_profile,
+            "analysis_results": deep_profile.per_image,
+            "layout_template": deep_profile.layout_type,
+            "aggregated_style": {
                 "layout_type": deep_profile.layout_type,
                 "typography_style": deep_profile.typography_style,
                 "mood_keywords": deep_profile.mood_keywords,
@@ -51,14 +73,18 @@ def analyze_style_node(state: AgentState) -> dict:
                 "color_palette_description": deep_profile.color_palette_description,
                 "contrast_level": deep_profile.contrast_level,
                 "style_prompt_suffix": deep_profile.style_prompt_suffix,
-            }
-            result["status"] = "style_analyzed_deep"
-            console.print(f"  [green]Deep style: {deep_profile.layout_type} / {deep_profile.typography_style}[/]")
-            console.print(f"  [green]Mood: {', '.join(deep_profile.mood_keywords[:4])}[/]")
-        except Exception as exc:
-            console.print(f"  [yellow]Deep analysis failed ({exc}), using pixel-only.[/]")
+            },
+            "status": "style_analyzed_deep",
+        }
+        console.print(
+            f"  [green]Deep style: {deep_profile.layout_type} / {deep_profile.typography_style}[/]"
+        )
+        console.print(f"  [green]Mood: {', '.join(deep_profile.mood_keywords[:4])}[/]")
+        return result
 
-    return result
+    # Pixel-only fallback path (no deep model, or it had nothing to chew on)
+    pixel_profile = StyleAnalyzer(config.REFERENCE_DIR).analyze_images()
+    return {"style_profile": pixel_profile, "status": "style_analyzed"}
 
 
 def _build_style_context(state: AgentState) -> str:
@@ -181,7 +207,9 @@ def generate_caption_node(state: AgentState) -> dict:
 def generate_images_node(state: AgentState) -> dict:
     console.print("\n[bold cyan]>> Node: Generate Images[/]")
 
-    prompt = state.get("enhanced_prompt", state["user_prompt"])
+    prompt = state.get("enhanced_prompt") or state.get("user_prompt", "")
+    if not prompt:
+        return {"generated_images": [], "error": "No prompt provided", "status": "generation_failed"}
     count = state.get("image_count", 1)
     post_type = state.get("post_type", "feed")
     size = config.INSTAGRAM_SIZES.get(post_type, config.INSTAGRAM_SIZES["feed"])
@@ -239,8 +267,9 @@ def save_images_node(state: AgentState) -> dict:
 
     caption = state.get("caption", "")
     if caption:
-        caption_path = config.OUTPUT_DIR / "latest_caption.txt"
-        caption_path.write_text(caption)
+        for path in paths:
+            caption_path = path.with_suffix(".txt")
+            caption_path.write_text(caption)
 
     console.print(f"  [green]Saved {len(paths)} image(s) to {config.OUTPUT_DIR}[/]")
     return {"saved_paths": paths, "status": "images_saved"}
@@ -279,11 +308,12 @@ def design_post_node(state: AgentState) -> dict:
 
     tagline = state.get("design_tagline")
     theme = state.get("design_theme", "light")
-    highlight = state.get("design_highlight_line", -2)  # -2 = no highlight
+    highlight = state.get("design_highlight_line")  # None = no highlight
+    post_type = state.get("post_type", "feed")
 
-    designer = PostDesigner(theme=theme)
+    designer = PostDesigner(theme=theme, post_type=post_type)
 
-    if highlight != -2:
+    if highlight is not None:
         path = designer.generate_accent_post(
             lines=lines,
             highlight_line=highlight,
