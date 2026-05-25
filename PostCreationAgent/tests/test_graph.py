@@ -1,27 +1,10 @@
 """Tests for graph routing logic.
 
-Routing functions are tested by extracting their logic directly
-to avoid importing the full node module (which requires langchain_google_genai).
+Imports the real routing functions from src.routing so a regression in
+the production code can't silently pass.
 """
 
-
-def should_process(state: dict) -> str:
-    images = state.get("generated_images", [])
-    if not images:
-        return "summary"
-    return "process_images"
-
-
-def should_publish(state: dict) -> str:
-    if state.get("publish_to_instagram"):
-        return "publish"
-    return "summary"
-
-
-def should_generate(state: dict) -> str:
-    if state.get("error"):
-        return "summary"
-    return "generate_images"
+from src.routing import should_process, should_publish, should_generate
 
 
 class TestShouldProcess:

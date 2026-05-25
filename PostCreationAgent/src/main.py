@@ -139,16 +139,23 @@ def cmd_design(agent: PostCreationAgent):
         default="light",
     )
 
-    highlight = -2
+    post_type = Prompt.ask(
+        "Post type",
+        choices=["feed", "portrait", "story", "landscape"],
+        default="feed",
+    )
+
+    highlight: int | None = None
     if Confirm.ask("Highlight a specific line in accent color?", default=False):
-        highlight = IntPrompt.ask(f"  Which line (1-{len(lines)})", default=len(lines))
-        highlight = highlight - 1  # convert to 0-indexed
+        choice = IntPrompt.ask(f"  Which line (1-{len(lines)})", default=len(lines))
+        highlight = choice - 1  # convert to 0-indexed
 
     paths = agent.design_post(
         lines=lines,
         tagline=tagline,
         theme=theme,
         highlight_line=highlight,
+        post_type=post_type,
     )
 
     if paths:

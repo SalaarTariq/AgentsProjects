@@ -79,10 +79,35 @@ THEMES: dict[str, dict[str, str]] = {
     },
 }
 
-FONT_PATH = "/System/Library/Fonts/HelveticaNeue.ttc"
-FONT_INDEX_BOLD = 1
-FONT_INDEX_LIGHT = 7
-FONT_INDEX_MEDIUM = 10
+# Font resolution: try platform-specific TTC/TTF paths in priority order.
+# Each entry is (path, optional_index_for_ttc). PIL ignores `index` for plain TTF.
+_BOLD_CANDIDATES = [
+    ("/System/Library/Fonts/HelveticaNeue.ttc", 1),               # macOS
+    ("/System/Library/Fonts/Supplemental/Arial Bold.ttf", 0),     # macOS supplemental
+    ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 0),  # Debian/Ubuntu
+    ("/usr/share/fonts/TTF/DejaVuSans-Bold.ttf", 0),              # Arch
+    ("C:/Windows/Fonts/arialbd.ttf", 0),                          # Windows
+]
+_LIGHT_CANDIDATES = [
+    ("/System/Library/Fonts/HelveticaNeue.ttc", 7),
+    ("/System/Library/Fonts/Supplemental/Arial.ttf", 0),
+    ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 0),
+    ("/usr/share/fonts/TTF/DejaVuSans.ttf", 0),
+    ("C:/Windows/Fonts/arial.ttf", 0),
+]
+
+
+def _load_font(candidates: list[tuple[str, int]], size: int) -> ImageFont.FreeTypeFont:
+    """Return the first font that loads from `candidates`, falling back to PIL's default."""
+    from pathlib import Path as _Path
+    for path, index in candidates:
+        if not _Path(path).exists():
+            continue
+        try:
+            return ImageFont.truetype(path, size, index=index)
+        except OSError:
+            continue
+    return ImageFont.load_default()
 
 
 def build_color_scheme(
@@ -109,17 +134,25 @@ class PostDesigner:
 
     def __init__(
         self,
-        width: int = 1080,
-        height: int = 1080,
+        width: int | None = None,
+        height: int | None = None,
         theme: str = "light",
+        post_type: str = "feed",
         bg: str | None = None,
         text: str | None = None,
         accent: str | None = None,
         divider: str | None = None,
     ):
+        # Dimensions: explicit width/height win; otherwise pull from post_type.
+        if width is None or height is None:
+            default = config.INSTAGRAM_SIZES.get(post_type, config.INSTAGRAM_SIZES["feed"])
+            width = width or default[0]
+            height = height or default[1]
         self.width = width
         self.height = height
         self.colors = build_color_scheme(theme, bg, text, accent, divider)
+        # Font sizes are tuned for 1080x1080; scale proportionally for other formats.
+        self._scale = min(width / 1080.0, height / 1080.0)
 
     # ── shared rendering core ────────────────────────────────────────
 
@@ -131,21 +164,26 @@ class PostDesigner:
         tagline_size: int = 24,
         line_spacing: int = 88,
         uppercase: bool = True,
-        highlight_line: int = -2,
+        highlight_line: int | None = None,
         output_prefix: str = "post",
         output_name: str | None = None,
     ) -> Path:
         if uppercase:
             lines = [line.upper() for line in lines]
 
-        if highlight_line != -2 and highlight_line < 0:
+        # Apply post-type scale to typography so non-square formats stay readable.
+        font_size = max(12, int(font_size * self._scale))
+        tagline_size = max(10, int(tagline_size * self._scale))
+        line_spacing = max(font_size + 8, int(line_spacing * self._scale))
+
+        if highlight_line is not None and highlight_line < 0:
             highlight_line = len(lines) + highlight_line
 
         img = Image.new("RGB", (self.width, self.height), self.colors["bg"])
         draw = ImageDraw.Draw(img)
 
-        font_bold = ImageFont.truetype(FONT_PATH, font_size, index=FONT_INDEX_BOLD)
-        font_light = ImageFont.truetype(FONT_PATH, tagline_size, index=FONT_INDEX_LIGHT)
+        font_bold = _load_font(_BOLD_CANDIDATES, font_size)
+        font_light = _load_font(_LIGHT_CANDIDATES, tagline_size)
 
         main_block_height = len(lines) * line_spacing - (line_spacing - font_size)
 
@@ -222,7 +260,7 @@ class PostDesigner:
     def generate_accent_post(
         self,
         lines: list[str],
-        highlight_line: int = -1,
+        highlight_line: int | None = -1,
         tagline: str | None = None,
         font_size: int = 70,
         tagline_size: int = 24,

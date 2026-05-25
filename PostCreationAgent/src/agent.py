@@ -48,7 +48,8 @@ class PostCreationAgent:
         lines: list[str],
         tagline: str | None = None,
         theme: str = "light",
-        highlight_line: int = -2,
+        highlight_line: int | None = None,
+        post_type: str = "feed",
     ) -> list[Path]:
         """Generate a minimal branded post from user-provided text lines."""
         console.print(f"\n[bold magenta]{'=' * 50}[/]")
@@ -63,6 +64,7 @@ class PostCreationAgent:
             "design_tagline": tagline,
             "design_theme": theme,
             "design_highlight_line": highlight_line,
+            "post_type": post_type,
         }
 
         result = self.design_app.invoke(initial_state)

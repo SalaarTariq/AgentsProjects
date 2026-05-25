@@ -1,5 +1,6 @@
 from langgraph.graph import StateGraph, START, END
 from src.state import AgentState
+from src.routing import should_process, should_publish, should_generate
 from src.nodes import (
     analyze_style_node,
     enhance_prompt_node,
@@ -11,25 +12,6 @@ from src.nodes import (
     design_post_node,
     summary_node,
 )
-
-
-def should_process(state: AgentState) -> str:
-    images = state.get("generated_images", [])
-    if not images:
-        return "summary"
-    return "process_images"
-
-
-def should_publish(state: AgentState) -> str:
-    if state.get("publish_to_instagram"):
-        return "publish"
-    return "summary"
-
-
-def should_generate(state: AgentState) -> str:
-    if state.get("error"):
-        return "summary"
-    return "generate_images"
 
 
 def build_graph() -> StateGraph:
