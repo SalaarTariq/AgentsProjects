@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from typing import Any, TypedDict, TYPE_CHECKING
+from typing import Any, TypedDict
 from pathlib import Path
 
-if TYPE_CHECKING:
-    from src.style_analyzer import StyleProfile
-    from src.deep_style_analyzer import DeepStyleProfile
+# Imported unconditionally because langgraph's StateGraph resolves type hints
+# at runtime via get_type_hints(); TYPE_CHECKING-only imports break that.
+from src.style_analyzer import StyleProfile
+from src.deep_style_analyzer import DeepStyleProfile
 
 
 class AgentState(TypedDict, total=False):
@@ -19,7 +20,7 @@ class AgentState(TypedDict, total=False):
     design_lines: list[str]
     design_tagline: str
     design_theme: str  # light, dark, sage, cream, olive, forest, warm
-    design_highlight_line: int  # index of line to accent-color, -2 for none
+    design_highlight_line: int | None  # None = no highlight; otherwise 0-indexed line
 
     # Pixel-level style (legacy KMeans colors)
     style_profile: StyleProfile

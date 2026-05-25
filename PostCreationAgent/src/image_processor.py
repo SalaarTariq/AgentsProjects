@@ -1,8 +1,38 @@
+import colorsys
 from pathlib import Path
 from datetime import datetime
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 from rich.console import Console
 from src import config
+
+
+def _hex_to_rgb(hex_color: str) -> tuple[int, int, int]:
+    h = hex_color.lstrip("#")
+    return tuple(int(h[i : i + 2], 16) for i in (0, 2, 4))
+
+
+def _pick_accent_color(palette: list[str]) -> tuple[int, int, int] | None:
+    """Pick the most saturated, mid-brightness color from the palette.
+
+    KMeans sorts palette by frequency, so palette[0] is usually the background.
+    A flat blend toward the background washes every output toward beige/cream.
+    Instead we want the actual brand accent — high saturation, not too dark/light.
+    """
+    best = None
+    best_score = -1.0
+    for hex_color in palette:
+        try:
+            r, g, b = _hex_to_rgb(hex_color)
+        except (ValueError, IndexError):
+            continue
+        h, l, s = colorsys.rgb_to_hls(r / 255.0, g / 255.0, b / 255.0)
+        # penalize extremes of lightness so we don't pick a saturated near-black
+        lightness_penalty = abs(l - 0.5) * 0.6
+        score = s - lightness_penalty
+        if score > best_score:
+            best_score = score
+            best = (r, g, b)
+    return best
 
 console = Console()
 
@@ -87,14 +117,15 @@ class ImageProcessor:
 
         return img
 
-    def apply_color_filter(self, image: Image.Image, color_palette: list[str], strength: float = 0.15) -> Image.Image:
+    def apply_color_filter(self, image: Image.Image, color_palette: list[str], strength: float = 0.08) -> Image.Image:
         if not color_palette:
             return image
 
-        hex_color = color_palette[0].lstrip("#")
-        r, g, b = tuple(int(hex_color[i : i + 2], 16) for i in (0, 2, 4))
+        accent = _pick_accent_color(color_palette)
+        if accent is None:
+            return image
 
-        overlay = Image.new("RGB", image.size, (r, g, b))
+        overlay = Image.new("RGB", image.size, accent)
         return Image.blend(image, overlay, strength)
 
     def enhance_image(self, image: Image.Image, sharpness: float = 1.2, contrast: float = 1.1, saturation: float = 1.1) -> Image.Image:

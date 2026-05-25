@@ -99,6 +99,8 @@ class StyleAnalyzer:
         return self.profile
 
     def _get_image_paths(self) -> list[Path]:
+        if not self.reference_dir.is_dir():
+            return []
         extensions = {".jpg", ".jpeg", ".png", ".webp"}
         paths = []
         for f in sorted(self.reference_dir.iterdir()):
