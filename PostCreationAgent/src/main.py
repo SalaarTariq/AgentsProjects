@@ -46,8 +46,8 @@ def cmd_create(agent: PostCreationAgent):
 
     post_type = Prompt.ask(
         "Post type",
-        choices=["feed", "portrait", "story", "landscape"],
-        default="feed",
+        choices=list(config.POST_TYPE_CHOICES),
+        default=config.DEFAULT_POST_TYPE,
     )
 
     text_overlay = None
@@ -78,8 +78,8 @@ def cmd_preview(agent: PostCreationAgent):
     count = IntPrompt.ask("How many images", default=1)
     post_type = Prompt.ask(
         "Post type",
-        choices=["feed", "portrait", "story", "landscape"],
-        default="feed",
+        choices=list(config.POST_TYPE_CHOICES),
+        default=config.DEFAULT_POST_TYPE,
     )
 
     agent.preview_post(prompt, count, post_type)
@@ -141,8 +141,8 @@ def cmd_design(agent: PostCreationAgent):
 
     post_type = Prompt.ask(
         "Post type",
-        choices=["feed", "portrait", "story", "landscape"],
-        default="feed",
+        choices=list(config.POST_TYPE_CHOICES),
+        default=config.DEFAULT_POST_TYPE,
     )
 
     highlight: int | None = None
@@ -179,8 +179,8 @@ def cmd_batch(agent: PostCreationAgent):
 
     post_type = Prompt.ask(
         "Post type for all",
-        choices=["feed", "portrait", "story", "landscape"],
-        default="feed",
+        choices=list(config.POST_TYPE_CHOICES),
+        default=config.DEFAULT_POST_TYPE,
     )
 
     console.print(f"\n[bold]Generating {len(prompts)} posts...[/]\n")
@@ -218,7 +218,7 @@ def main():
             if not prompt:
                 console.print("[red]Usage: python -m src.main quick <prompt>[/]")
                 return
-            agent.create_post(prompt=prompt, count=1, post_type="feed")
+            agent.create_post(prompt=prompt, count=1, post_type=config.DEFAULT_POST_TYPE)
         else:
             console.print(f"[red]Unknown command: {command}[/]")
             show_help()

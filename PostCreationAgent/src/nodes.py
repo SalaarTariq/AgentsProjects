@@ -123,13 +123,9 @@ def enhance_prompt_node(state: AgentState) -> dict:
 
     style_context = _build_style_context(state)
 
-    dimension_map = {
-        "feed": "1080x1080 square (1:1)",
-        "portrait": "1080x1350 vertical (4:5)",
-        "story": "1080x1920 full-screen vertical (9:16)",
-        "landscape": "1080x608 wide (1.91:1)",
-    }
-    dimensions = dimension_map.get(post_type, dimension_map["feed"])
+    dimensions = config.POST_TYPE_DIMENSIONS.get(
+        post_type, config.POST_TYPE_DIMENSIONS[config.DEFAULT_POST_TYPE]
+    )
 
     llm = _get_llm()
     prompt_msg = (

@@ -29,6 +29,16 @@ INSTAGRAM_SIZES = {
     "landscape": (1080, 608),
 }
 
+# Human-readable descriptions used by the LLM prompt builder.
+POST_TYPE_DIMENSIONS = {
+    "feed": "1080x1080 square (1:1)",
+    "portrait": "1080x1350 vertical (4:5)",
+    "story": "1080x1920 full-screen vertical (9:16)",
+    "landscape": "1080x608 wide (1.91:1)",
+}
+
+POST_TYPE_CHOICES = tuple(INSTAGRAM_SIZES.keys())
+
 DEFAULT_POST_TYPE = "feed"
 MAX_RETRIES = 3
 REQUEST_TIMEOUT = 120
