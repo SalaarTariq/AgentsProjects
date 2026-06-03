@@ -9,6 +9,10 @@ from src import config
 console = Console()
 
 
+def _clamp_image_count(count: int) -> int:
+    return max(1, min(count, config.MAX_IMAGES_PER_POST))
+
+
 def print_banner():
     console.print(Panel.fit(
         "[bold magenta]Instagram Post Creation Agent[/]\n"
@@ -41,8 +45,7 @@ def cmd_create(agent: PostCreationAgent):
         console.print("[red]Prompt cannot be empty.[/]")
         return
 
-    count = IntPrompt.ask("How many images", default=1)
-    count = max(1, min(count, 10))
+    count = _clamp_image_count(IntPrompt.ask("How many images", default=1))
 
     post_type = Prompt.ask(
         "Post type",
@@ -75,7 +78,7 @@ def cmd_preview(agent: PostCreationAgent):
         console.print("[red]Prompt cannot be empty.[/]")
         return
 
-    count = IntPrompt.ask("How many images", default=1)
+    count = _clamp_image_count(IntPrompt.ask("How many images", default=1))
     post_type = Prompt.ask(
         "Post type",
         choices=list(config.POST_TYPE_CHOICES),
@@ -147,7 +150,11 @@ def cmd_design(agent: PostCreationAgent):
 
     highlight: int | None = None
     if Confirm.ask("Highlight a specific line in accent color?", default=False):
-        choice = IntPrompt.ask(f"  Which line (1-{len(lines)})", default=len(lines))
+        while True:
+            choice = IntPrompt.ask(f"  Which line (1-{len(lines)})", default=len(lines))
+            if 1 <= choice <= len(lines):
+                break
+            console.print(f"  [yellow]Please enter a number between 1 and {len(lines)}.[/]")
         highlight = choice - 1  # convert to 0-indexed
 
     paths = agent.design_post(
