@@ -182,9 +182,12 @@ def _history_to_messages(history: Iterable[dict]) -> list:
 def rewrite_query(question: str, history: list[dict] | None) -> str:
     if not history:
         return question
+    # Only the recent turns inform the rewrite — older context is irrelevant for
+    # disambiguating "what about clause 4?" style follow-ups and just costs tokens.
+    bounded = _history_to_messages(history)[-8:]
     chain = REWRITE_PROMPT | get_llm(temperature=0.0) | StrOutputParser()
     try:
-        out = chain.invoke({"history": _history_to_messages(history), "question": question})
+        out = chain.invoke({"history": bounded, "question": question})
         return (out or question).strip()
     except Exception:
         return question
