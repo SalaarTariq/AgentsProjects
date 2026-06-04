@@ -25,6 +25,8 @@ let ready = false;
 let mode = localStorage.getItem(MODE_KEY) || "brief";
 let sessionId = localStorage.getItem(SESSION_KEY) || null;
 let pendingSources = [];
+let currentAbortController = null;
+const EMPTY_STATE_HTML = emptyState ? emptyState.outerHTML : "";
 
 // ───────────────────────────────── helpers ───────────────────────────────
 
@@ -65,7 +67,47 @@ function renderMarkdown(text) {
 }
 
 function hideEmptyState() {
-  if (emptyState && emptyState.parentNode) emptyState.parentNode.removeChild(emptyState);
+  const es = chat.querySelector(".empty-state");
+  if (es) es.remove();
+}
+
+function showEmptyState() {
+  if (!EMPTY_STATE_HTML || chat.querySelector(".empty-state")) return;
+  chat.insertAdjacentHTML("afterbegin", EMPTY_STATE_HTML);
+  chat.querySelectorAll(".prompt-card").forEach((c) =>
+    c.addEventListener("click", () => {
+      questionInput.value = c.dataset.prompt;
+      autosize();
+      questionInput.focus();
+    })
+  );
+}
+
+function setSending(streaming) {
+  if (streaming) {
+    sendBtn.textContent = "Stop";
+    sendBtn.classList.add("btn-stop");
+    sendBtn.dataset.state = "stop";
+  } else {
+    sendBtn.textContent = "Ask";
+    sendBtn.classList.remove("btn-stop");
+    sendBtn.dataset.state = "send";
+  }
+}
+
+async function copyToClipboard(text, btn) {
+  try {
+    await navigator.clipboard.writeText(text);
+    const prev = btn.textContent;
+    btn.textContent = "Copied";
+    btn.classList.add("copied");
+    setTimeout(() => {
+      btn.textContent = prev;
+      btn.classList.remove("copied");
+    }, 1200);
+  } catch {
+    /* ignore */
+  }
 }
 
 function addUserMessage(content) {
@@ -87,10 +129,19 @@ function addAIMessage() {
   div.className = "message ai";
   div.dataset.mid = mid;
   div.innerHTML = `
-    <div class="role">Counsel <span class="mode-tag">${escapeHtml(mode)}</span></div>
+    <div class="role">
+      <span>Counsel</span>
+      <span class="mode-tag">${escapeHtml(mode)}</span>
+      <button type="button" class="copy-btn" aria-label="Copy answer" title="Copy answer">Copy</button>
+    </div>
     <div class="msg-body streaming"><span class="thinking">Consulting the record</span></div>
     <div class="src-mount"></div>
   `;
+  const copyBtn = div.querySelector(".copy-btn");
+  copyBtn.addEventListener("click", () => {
+    const text = div._markdown || div.querySelector(".msg-body").innerText;
+    copyToClipboard(text, copyBtn);
+  });
   chat.appendChild(div);
   chat.scrollTop = chat.scrollHeight;
   return div;
@@ -236,10 +287,12 @@ indexBtn.addEventListener("click", async () => {
 
 resetBtn.addEventListener("click", async () => {
   resetBtn.disabled = true;
+  if (currentAbortController) currentAbortController.abort();
   try {
     const url = sessionId ? `/api/reset?session_id=${encodeURIComponent(sessionId)}` : "/api/reset";
     await fetch(url, { method: "POST" });
     chat.innerHTML = "";
+    showEmptyState();
     fileInput.value = "";
     fileLabel.textContent = "Upload PDFs / TXT";
     indexBtn.disabled = true;
@@ -251,13 +304,16 @@ resetBtn.addEventListener("click", async () => {
 });
 
 clearHistoryBtn.addEventListener("click", async () => {
+  if (currentAbortController) currentAbortController.abort();
   if (!sessionId) {
     chat.innerHTML = "";
+    showEmptyState();
     return;
   }
   try {
     await fetch(`/api/history/clear?session_id=${encodeURIComponent(sessionId)}`, { method: "POST" });
     chat.innerHTML = "";
+    showEmptyState();
     setStatus("Conversation cleared.", "success");
   } catch {
     /* ignore */
@@ -289,6 +345,13 @@ questionInput.addEventListener("keydown", (e) => {
 
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
+
+  // While streaming, the Send button doubles as a Stop button.
+  if (currentAbortController) {
+    currentAbortController.abort();
+    return;
+  }
+
   const question = questionInput.value.trim();
   if (!question) return;
   if (!ready) {
@@ -299,7 +362,6 @@ form.addEventListener("submit", async (e) => {
   addUserMessage(question);
   questionInput.value = "";
   autosize();
-  sendBtn.disabled = true;
 
   const aiMsg = addAIMessage();
   const body = aiMsg.querySelector(".msg-body");
@@ -308,11 +370,15 @@ form.addEventListener("submit", async (e) => {
   let firstToken = true;
   let buffer = "";
 
+  currentAbortController = new AbortController();
+  setSending(true);
+
   try {
     const res = await fetch("/api/ask/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "text/event-stream" },
       body: JSON.stringify({ session_id: sessionId, question, mode }),
+      signal: currentAbortController.signal,
     });
 
     if (!res.ok) {
@@ -338,9 +404,16 @@ form.addEventListener("submit", async (e) => {
     }
   } catch (err) {
     body.classList.remove("streaming");
-    body.innerHTML = `<span style="color: var(--error)">${escapeHtml(err.message)}</span>`;
+    if (err.name === "AbortError") {
+      // User pressed Stop — keep partial answer, append a marker.
+      body.innerHTML = linkifyCitations(renderMarkdown(buffer), aiMsg) +
+        `<div class="stopped-note">— stopped</div>`;
+    } else {
+      body.innerHTML = `<span style="color: var(--error)">${escapeHtml(err.message)}</span>`;
+    }
   } finally {
-    sendBtn.disabled = false;
+    currentAbortController = null;
+    setSending(false);
     questionInput.focus();
   }
 
@@ -368,17 +441,61 @@ form.addEventListener("submit", async (e) => {
         firstToken = false;
       }
       buffer += payload.t || "";
+      aiMsg._markdown = buffer;
       body.innerHTML = linkifyCitations(renderMarkdown(buffer), aiMsg);
       chat.scrollTop = chat.scrollHeight;
     } else if (event === "done") {
       body.classList.remove("streaming");
-      // Final render pass, ensure citations are linked.
+      aiMsg._markdown = buffer;
       body.innerHTML = linkifyCitations(renderMarkdown(buffer), aiMsg);
     } else if (event === "error") {
       body.classList.remove("streaming");
       body.innerHTML = `<span style="color: var(--error)">${escapeHtml(payload.detail || "Stream error")}</span>`;
     }
   }
+});
+
+// ───────────────────────────────── drag & drop ───────────────────────────
+
+let dragDepth = 0;
+
+function isFileDrag(e) {
+  return e.dataTransfer && Array.from(e.dataTransfer.types || []).includes("Files");
+}
+
+window.addEventListener("dragenter", (e) => {
+  if (!isFileDrag(e)) return;
+  e.preventDefault();
+  dragDepth++;
+  document.body.classList.add("dragging");
+});
+
+window.addEventListener("dragover", (e) => {
+  if (!isFileDrag(e)) return;
+  e.preventDefault();
+});
+
+window.addEventListener("dragleave", () => {
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) document.body.classList.remove("dragging");
+});
+
+window.addEventListener("drop", (e) => {
+  if (!isFileDrag(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  document.body.classList.remove("dragging");
+  const dropped = Array.from(e.dataTransfer.files || []).filter((f) =>
+    /\.(pdf|txt)$/i.test(f.name)
+  );
+  if (!dropped.length) {
+    setStatus("Only PDF and TXT files are supported.", "error");
+    return;
+  }
+  const dt = new DataTransfer();
+  dropped.forEach((f) => dt.items.add(f));
+  fileInput.files = dt.files;
+  fileInput.dispatchEvent(new Event("change"));
 });
 
 // ───────────────────────────────── init ──────────────────────────────────

@@ -26,8 +26,14 @@ counter-arguments, risk grading, and recommended next steps.
   self-contained search query before retrieval.
 - **Streaming answers** — Server-Sent Events stream tokens; the sources rail
   is rendered immediately on the `meta` event, before generation completes.
+  The composer's **Send** button becomes **Stop** mid-stream and aborts via
+  `AbortController`, preserving the partial answer.
 - **Grounded by design** — the system prompt forbids invented authority and
   requires "the provided materials do not address …" when the record is silent.
+- **Operationally safe** — drag-and-drop uploads, 25 MB per-file / 75 MB
+  per-batch limits, filename sanitization and path-traversal guard on the
+  samples endpoint, TTL + cap on the in-process session table, and a
+  `/api/health` endpoint for readiness checks.
 
 ## Architecture
 
@@ -121,8 +127,8 @@ counter-arguments, risk grading, and recommended next steps.
 ## Files
 
 - `app.py` — FastAPI: `/api/upload`, `/api/ask`, `/api/ask/stream` (SSE),
-  `/api/samples`, `/api/status`, `/api/reset`, `/api/history/clear`. Per-session
-  hybrid store + chat history.
+  `/api/samples`, `/api/status`, `/api/health`, `/api/reset`, `/api/history/clear`.
+  Per-session hybrid store + chat history with TTL eviction.
 - `rag_pipeline.py` — Query rewrite, hybrid retrieval, cross-encoder rerank,
   mode-specific senior-counsel prompts, sync + streaming answer APIs.
 - `vector_database.py` — Loader, legal-aware splitter, metadata extraction,

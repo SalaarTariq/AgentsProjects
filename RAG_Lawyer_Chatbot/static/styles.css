@@ -336,6 +336,24 @@ body {
 }
 .message.user .role { color: rgba(255,255,255,0.7); }
 
+.copy-btn {
+  margin-left: auto;
+  appearance: none;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 999px;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+.copy-btn:hover { color: var(--text); background: var(--bg-2); border-color: var(--border); }
+.copy-btn.copied { color: var(--good); border-color: var(--good); }
+
 .role .mode-tag {
   font-size: 10px;
   padding: 2px 7px;
@@ -498,6 +516,38 @@ body {
   animation: blink 1s steps(2, end) infinite;
 }
 @keyframes blink { 50% { opacity: 0; } }
+
+/* Stop button (sendBtn while streaming) */
+.btn-stop, .btn-stop:hover:not(:disabled) {
+  background: var(--bad);
+  border-color: var(--bad);
+  color: #fff;
+}
+.btn-stop:hover:not(:disabled) { background: #6f1818; border-color: #6f1818; }
+
+.stopped-note {
+  margin-top: 8px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--muted);
+}
+
+/* Drag & drop overlay */
+body.dragging::after {
+  content: "Drop PDFs or TXTs to index";
+  position: fixed;
+  inset: 16px;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  background: rgba(31, 41, 51, 0.06);
+  display: grid;
+  place-items: center;
+  font-family: var(--serif);
+  font-size: 28px;
+  color: var(--accent);
+  z-index: 1000;
+  pointer-events: none;
+}
 
 /* Thinking dots */
 .thinking { color: var(--muted); font-style: italic; }
