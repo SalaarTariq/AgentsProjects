@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import tempfile
+import time
 import uuid
 from pathlib import Path
 from threading import Lock
-from typing import Literal
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse, StreamingResponse
@@ -21,6 +22,12 @@ from vector_database import HybridStore, build_hybrid_store
 BASE_DIR = Path(__file__).parent
 STATIC_DIR = BASE_DIR / "static"
 SAMPLE_DIR = BASE_DIR / "sample_docs"
+
+MAX_FILE_BYTES = 25 * 1024 * 1024      # 25 MB per file
+MAX_TOTAL_BYTES = 75 * 1024 * 1024     # 75 MB per upload batch
+SESSION_TTL_SECONDS = 60 * 60          # evict sessions idle >1h
+MAX_SESSIONS = 200                     # hard cap on concurrent sessions
+SAMPLE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 app = FastAPI(title="AI Lawyer")
 
@@ -36,19 +43,45 @@ class ChatSession:
         self.indexed_files: list[str] = []
         self.history: list[dict] = []  # [{role, content}]
         self.lock = Lock()
+        self.last_seen = time.time()
 
 
 _sessions: dict[str, ChatSession] = {}
 _sessions_lock = Lock()
 
 
+def _evict_idle_locked(now: float) -> None:
+    """Drop sessions idle past TTL. Caller holds the lock."""
+    if not _sessions:
+        return
+    cutoff = now - SESSION_TTL_SECONDS
+    for sid in [sid for sid, s in _sessions.items() if s.last_seen < cutoff]:
+        _sessions.pop(sid, None)
+
+
+def _enforce_cap_locked() -> None:
+    """Cap the session table to MAX_SESSIONS by dropping the oldest. Caller holds the lock."""
+    if len(_sessions) <= MAX_SESSIONS:
+        return
+    ordered = sorted(_sessions.items(), key=lambda kv: kv[1].last_seen)
+    for sid, _ in ordered[: len(_sessions) - MAX_SESSIONS]:
+        _sessions.pop(sid, None)
+
+
 def get_or_create_session(session_id: str | None) -> ChatSession:
+    now = time.time()
     with _sessions_lock:
+        _evict_idle_locked(now)
         if session_id and session_id in _sessions:
-            return _sessions[session_id]
+            sess = _sessions[session_id]
+            sess.last_seen = now
+            return sess
         sid = session_id or uuid.uuid4().hex
-        _sessions[sid] = ChatSession(sid)
-        return _sessions[sid]
+        sess = ChatSession(sid)
+        sess.last_seen = now
+        _sessions[sid] = sess
+        _enforce_cap_locked()
+        return sess
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +135,13 @@ def _doc_to_source(d) -> SourceOut:
 # Routes
 # ---------------------------------------------------------------------------
 
+@app.get("/api/health")
+def health() -> dict:
+    with _sessions_lock:
+        active = len(_sessions)
+    return {"status": "ok", "active_sessions": active}
+
+
 @app.get("/api/status", response_model=StatusResponse)
 def status(session_id: str | None = None) -> StatusResponse:
     s = get_or_create_session(session_id)
@@ -137,21 +177,37 @@ async def upload(
     cleanup_dir: Path | None = None
 
     if sample:
-        sample_path = SAMPLE_DIR / sample
-        if not sample_path.exists():
+        if not SAMPLE_NAME_RE.match(sample):
+            raise HTTPException(status_code=400, detail="Invalid sample name.")
+        sample_dir = SAMPLE_DIR.resolve()
+        sample_path = (SAMPLE_DIR / sample).resolve()
+        if sample_dir not in sample_path.parents or not sample_path.is_file():
             raise HTTPException(status_code=404, detail=f"Sample '{sample}' not found.")
         paths.append(sample_path)
     if files:
         tmpdir = Path(tempfile.mkdtemp(prefix="ailawyer_"))
         cleanup_dir = tmpdir
+        total_bytes = 0
         for uf in files:
-            name = uf.filename or ""
-            if not name.lower().endswith((".pdf", ".txt")):
+            # Strip any directory components an attacker may have stuffed into filename.
+            name = Path(uf.filename or "").name
+            if not name or not name.lower().endswith((".pdf", ".txt")):
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Unsupported file type: '{name}'. Use PDF or TXT.",
+                    detail=f"Unsupported file type: '{uf.filename or ''}'. Use PDF or TXT.",
                 )
             data = await uf.read()
+            if len(data) > MAX_FILE_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"'{name}' exceeds the {MAX_FILE_BYTES // (1024 * 1024)} MB per-file limit.",
+                )
+            total_bytes += len(data)
+            if total_bytes > MAX_TOTAL_BYTES:
+                raise HTTPException(
+                    status_code=413,
+                    detail=f"Upload batch exceeds the {MAX_TOTAL_BYTES // (1024 * 1024)} MB total limit.",
+                )
             p = tmpdir / name
             p.write_bytes(data)
             paths.append(p)
