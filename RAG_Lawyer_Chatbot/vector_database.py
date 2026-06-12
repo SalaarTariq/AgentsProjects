@@ -19,6 +19,9 @@ INDEX_DIR = Path("faiss_index")
 CHUNK_SIZE = 900
 CHUNK_OVERLAP = 180
 SUPPORTED_EXTS = {".pdf", ".txt"}
+MAX_CITATIONS_PER_CHUNK = 8
+RRF_K = 60.0  # Reciprocal Rank Fusion smoothing constant
+DOC_TYPE_SAMPLE_CHARS = 4000
 
 # Legal-aware separators: respect article/section/clause boundaries before falling
 # back to paragraphs and sentences. Keeps related authority in one chunk.
@@ -67,7 +70,7 @@ _CITATION_RE = re.compile(
 def _extract_citations(text: str) -> list[str]:
     hits = _CITATION_RE.findall(text)
     flat = {grp for tup in hits for grp in tup if grp}
-    return sorted(flat)[:8]
+    return sorted(flat)[:MAX_CITATIONS_PER_CHUNK]
 
 
 def load_document(path: str | Path) -> list[Document]:
@@ -80,7 +83,7 @@ def load_document(path: str | Path) -> list[Document]:
     else:
         raise ValueError(f"Unsupported file type: {suffix}. Supported: {sorted(SUPPORTED_EXTS)}")
 
-    sample = "\n".join(d.page_content for d in docs[:3])[:4000]
+    sample = "\n".join(d.page_content for d in docs[:3])[:DOC_TYPE_SAMPLE_CHARS]
     doc_type = _classify_doc_type(sample)
     for d in docs:
         d.metadata["source"] = p.name
@@ -125,13 +128,12 @@ class HybridStore:
         dense = self.dense(query, k=k_dense)
         sparse = self.sparse(query, k=k_sparse)
         scores: dict[str, tuple[float, Document]] = {}
-        c = 60.0  # RRF constant
         for rank, d in enumerate(dense):
             key = _doc_key(d)
-            scores[key] = (scores.get(key, (0.0, d))[0] + 1.0 / (c + rank), d)
+            scores[key] = (scores.get(key, (0.0, d))[0] + 1.0 / (RRF_K + rank), d)
         for rank, d in enumerate(sparse):
             key = _doc_key(d)
-            scores[key] = (scores.get(key, (0.0, d))[0] + 1.0 / (c + rank), d)
+            scores[key] = (scores.get(key, (0.0, d))[0] + 1.0 / (RRF_K + rank), d)
         ranked = sorted(scores.values(), key=lambda x: x[0], reverse=True)
         return [d for _, d in ranked]
 
