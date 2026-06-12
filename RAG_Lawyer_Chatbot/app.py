@@ -27,6 +27,7 @@ MAX_FILE_BYTES = 25 * 1024 * 1024      # 25 MB per file
 MAX_TOTAL_BYTES = 75 * 1024 * 1024     # 75 MB per upload batch
 SESSION_TTL_SECONDS = 60 * 60          # evict sessions idle >1h
 MAX_SESSIONS = 200                     # hard cap on concurrent sessions
+SOURCE_SNIPPET_CHARS = 480             # passage preview length sent to the UI
 SAMPLE_NAME_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 app = FastAPI(title="AI Lawyer")
@@ -122,10 +123,12 @@ class StatusResponse(BaseModel):
 
 def _doc_to_source(d) -> SourceOut:
     page = d.metadata.get("page")
+    body = d.page_content
+    snippet = body[:SOURCE_SNIPPET_CHARS] + ("…" if len(body) > SOURCE_SNIPPET_CHARS else "")
     return SourceOut(
         source=d.metadata.get("source", "uploaded"),
         page=page if isinstance(page, int) else None,
-        snippet=d.page_content[:480] + ("…" if len(d.page_content) > 480 else ""),
+        snippet=snippet,
         doc_type=d.metadata.get("doc_type"),
         citations=list(d.metadata.get("citations", [])),
     )
