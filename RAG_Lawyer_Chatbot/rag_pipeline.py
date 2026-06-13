@@ -31,6 +31,7 @@ RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 TOP_K_RETRIEVE = 12   # hybrid candidates before rerank
 TOP_K_FINAL = 6       # passages passed to the LLM
 MAX_CONTEXT_CHARS = 9000
+MAX_HISTORY_MESSAGES = 8  # last 4 user+assistant turns kept for rewrite and prompt
 
 Mode = Literal["quick", "brief", "drafting", "compare"]
 
@@ -184,7 +185,7 @@ def rewrite_query(question: str, history: list[dict] | None) -> str:
         return question
     # Only the recent turns inform the rewrite — older context is irrelevant for
     # disambiguating "what about clause 4?" style follow-ups and just costs tokens.
-    bounded = _history_to_messages(history)[-8:]
+    bounded = _history_to_messages(history)[-MAX_HISTORY_MESSAGES:]
     chain = REWRITE_PROMPT | get_llm(temperature=0.0) | StrOutputParser()
     try:
         out = chain.invoke({"history": bounded, "question": question})
@@ -236,7 +237,7 @@ def format_context(docs: list[Document]) -> str:
 def _build_messages(mode: Mode, history: list[dict] | None, question: str, context: str) -> list:
     system = SystemMessage(content=PROMPTS[mode] + f"\n\n<context>\n{context}\n</context>")
     msgs: list = [system]
-    msgs.extend(_history_to_messages(history or [])[-8:])  # last 4 turns
+    msgs.extend(_history_to_messages(history or [])[-MAX_HISTORY_MESSAGES:])
     msgs.append(HumanMessage(content=question))
     return msgs
 
