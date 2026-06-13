@@ -22,6 +22,9 @@ SUPPORTED_EXTS = {".pdf", ".txt"}
 MAX_CITATIONS_PER_CHUNK = 8
 RRF_K = 60.0  # Reciprocal Rank Fusion smoothing constant
 DOC_TYPE_SAMPLE_CHARS = 4000
+MMR_FETCH_MULTIPLIER = 4   # candidate pool for MMR is k * this before diversification
+MMR_LAMBDA = 0.5           # 0 = max diversity, 1 = max relevance
+DEFAULT_BM25_K = 8
 
 # Legal-aware separators: respect article/section/clause boundaries before falling
 # back to paragraphs and sentences. Keeps related authority in one chunk.
@@ -117,7 +120,9 @@ class HybridStore:
     files: list[str] = field(default_factory=list)
 
     def dense(self, query: str, k: int = 8) -> list[Document]:
-        return self.faiss.max_marginal_relevance_search(query, k=k, fetch_k=k * 4, lambda_mult=0.5)
+        return self.faiss.max_marginal_relevance_search(
+            query, k=k, fetch_k=k * MMR_FETCH_MULTIPLIER, lambda_mult=MMR_LAMBDA
+        )
 
     def sparse(self, query: str, k: int = 8) -> list[Document]:
         self.bm25.k = k
@@ -158,7 +163,7 @@ def build_hybrid_store(paths: Iterable[str | Path]) -> HybridStore:
     chunks = split_documents(docs)
     faiss = FAISS.from_documents(chunks, get_embeddings())
     bm25 = BM25Retriever.from_documents(chunks)
-    bm25.k = 8
+    bm25.k = DEFAULT_BM25_K
     return HybridStore(faiss=faiss, bm25=bm25, chunks=chunks, files=files)
 
 
