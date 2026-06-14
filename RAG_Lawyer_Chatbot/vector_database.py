@@ -25,6 +25,8 @@ DOC_TYPE_SAMPLE_CHARS = 4000
 MMR_FETCH_MULTIPLIER = 4   # candidate pool for MMR is k * this before diversification
 MMR_LAMBDA = 0.5           # 0 = max diversity, 1 = max relevance
 DEFAULT_BM25_K = 8
+DEFAULT_DENSE_K = 8
+DEFAULT_HYBRID_K = 8
 
 # Legal-aware separators: respect article/section/clause boundaries before falling
 # back to paragraphs and sentences. Keeps related authority in one chunk.
@@ -119,16 +121,16 @@ class HybridStore:
     chunks: list[Document] = field(default_factory=list)
     files: list[str] = field(default_factory=list)
 
-    def dense(self, query: str, k: int = 8) -> list[Document]:
+    def dense(self, query: str, k: int = DEFAULT_DENSE_K) -> list[Document]:
         return self.faiss.max_marginal_relevance_search(
             query, k=k, fetch_k=k * MMR_FETCH_MULTIPLIER, lambda_mult=MMR_LAMBDA
         )
 
-    def sparse(self, query: str, k: int = 8) -> list[Document]:
+    def sparse(self, query: str, k: int = DEFAULT_BM25_K) -> list[Document]:
         self.bm25.k = k
         return self.bm25.invoke(query)
 
-    def hybrid(self, query: str, k_dense: int = 8, k_sparse: int = 8) -> list[Document]:
+    def hybrid(self, query: str, k_dense: int = DEFAULT_HYBRID_K, k_sparse: int = DEFAULT_HYBRID_K) -> list[Document]:
         """Reciprocal Rank Fusion over dense (MMR) + sparse (BM25) results."""
         dense = self.dense(query, k=k_dense)
         sparse = self.sparse(query, k=k_sparse)
