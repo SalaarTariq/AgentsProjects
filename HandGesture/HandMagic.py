@@ -37,6 +37,11 @@ TIP_IDS          = [4, 8, 12, 16, 20]
 FINGER_NAMES     = ["thumb", "index", "middle", "ring", "pinky"]
 FINGER_BASE_HUES = [200, 280, 320, 30, 90]  # cyan, purple, magenta, orange, green
 
+BEAM_OUTER_GLOW_PX = 18   # polyline thickness for the outer halo pass
+BEAM_MID_GLOW_PX   = 9    # polyline thickness for the mid glow pass
+BEAM_MAIN_PX       = 4    # polyline thickness for the main bolt
+BEAM_CORE_PX       = 2    # polyline thickness for the white-hot core
+
 HAND_BONES = [
     (0, 1), (1, 2), (2, 3), (3, 4),
     (0, 5), (5, 6), (6, 7), (7, 8),
@@ -99,18 +104,18 @@ def draw_beam(frame, overlay, p1, p2, color, intensity: float = 1.0, branches: b
 
     # Outer glow halo
     np.copyto(overlay, frame)
-    cv2.polylines(overlay, [pts_arr], False, color, 18, cv2.LINE_AA)
+    cv2.polylines(overlay, [pts_arr], False, color, BEAM_OUTER_GLOW_PX, cv2.LINE_AA)
     cv2.addWeighted(overlay, 0.18 * intensity, frame, 1 - 0.18 * intensity, 0, frame)
 
     # Mid glow
     np.copyto(overlay, frame)
-    cv2.polylines(overlay, [pts_arr], False, color, 9, cv2.LINE_AA)
+    cv2.polylines(overlay, [pts_arr], False, color, BEAM_MID_GLOW_PX, cv2.LINE_AA)
     cv2.addWeighted(overlay, 0.4 * intensity, frame, 1 - 0.4 * intensity, 0, frame)
 
     # Main bolt + white-hot core
     core_color = tuple(min(255, int(c * 0.3 + 200)) for c in color)
-    cv2.polylines(frame, [pts_arr], False, color, 4, cv2.LINE_AA)
-    cv2.polylines(frame, [pts_arr], False, core_color, 2, cv2.LINE_AA)
+    cv2.polylines(frame, [pts_arr], False, color, BEAM_MAIN_PX, cv2.LINE_AA)
+    cv2.polylines(frame, [pts_arr], False, core_color, BEAM_CORE_PX, cv2.LINE_AA)
 
     # Random forking branches
     if branches and random.random() < 0.7 * intensity:

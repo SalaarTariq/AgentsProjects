@@ -28,6 +28,10 @@ TIP_IDS           = [4, 8, 12, 16, 20]
 FINGER_NAMES      = ["thumb", "index", "middle", "ring", "pinky"]
 FINGER_HUE_OFFSETS = [0, 60, 120, 200, 280]  # per-finger hue offset (degrees)
 
+GLOW_OUTER_EXTRA_PX = 14   # extra thickness over core for the outer halo pass
+GLOW_MID_EXTRA_PX   = 7    # extra thickness over core for the mid glow pass
+GLOW_RIM_EXTRA_PX   = 2    # extra thickness over core for the rim pass before the core stroke
+
 HAND_BONES = [
     (0, 1), (1, 2), (2, 3), (3, 4),
     (0, 5), (5, 6), (6, 7), (7, 8),
@@ -63,14 +67,14 @@ def draw_glow_line(frame, overlay, p1, p2, color, core_thickness: int = 3) -> No
     Reuses a pre-allocated overlay buffer to avoid repeated frame.copy() calls.
     """
     np.copyto(overlay, frame)
-    cv2.line(overlay, p1, p2, color, core_thickness + 14, cv2.LINE_AA)
+    cv2.line(overlay, p1, p2, color, core_thickness + GLOW_OUTER_EXTRA_PX, cv2.LINE_AA)
     cv2.addWeighted(overlay, 0.18, frame, 0.82, 0, frame)
 
     np.copyto(overlay, frame)
-    cv2.line(overlay, p1, p2, color, core_thickness + 7, cv2.LINE_AA)
+    cv2.line(overlay, p1, p2, color, core_thickness + GLOW_MID_EXTRA_PX, cv2.LINE_AA)
     cv2.addWeighted(overlay, 0.35, frame, 0.65, 0, frame)
 
-    cv2.line(frame, p1, p2, color, core_thickness + 2, cv2.LINE_AA)
+    cv2.line(frame, p1, p2, color, core_thickness + GLOW_RIM_EXTRA_PX, cv2.LINE_AA)
     bright = tuple(min(255, int(c * 0.5 + 130)) for c in color)
     cv2.line(frame, p1, p2, bright, core_thickness, cv2.LINE_AA)
 
