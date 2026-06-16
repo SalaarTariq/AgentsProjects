@@ -89,6 +89,10 @@ class ImageGenerator:
     # and CDNs/proxies in the chain reject URLs past a few KB. Cap before encoding.
     _POLLINATIONS_PROMPT_LIMIT = 1500
 
+    # Downloading an already-generated image from a provider URL is a plain
+    # CDN fetch — much faster than the generation call itself.
+    _IMAGE_DOWNLOAD_TIMEOUT = 60
+
     def _generate_pollinations(self, prompt: str, size: tuple, seed_offset: int = 0) -> Image.Image:
         truncated = prompt[: self._POLLINATIONS_PROMPT_LIMIT]
         encoded = urllib.parse.quote(truncated)
@@ -161,7 +165,7 @@ class ImageGenerator:
         if "data" in data and len(data["data"]) > 0:
             img_data = data["data"][0]
             if "url" in img_data:
-                img_response = requests.get(img_data["url"], timeout=60)
+                img_response = requests.get(img_data["url"], timeout=self._IMAGE_DOWNLOAD_TIMEOUT)
                 return Image.open(io.BytesIO(img_response.content)).convert("RGB")
             elif "b64_json" in img_data:
                 img_bytes = base64.b64decode(img_data["b64_json"])
