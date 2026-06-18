@@ -93,6 +93,10 @@ class ImageGenerator:
     # CDN fetch — much faster than the generation call itself.
     _IMAGE_DOWNLOAD_TIMEOUT = 60
 
+    # HuggingFace returns an estimated_time when a model is cold-loading.
+    # Cap our sleep so a bad estimate can't stall the whole pipeline.
+    _HUGGINGFACE_LOAD_WAIT_CAP = 60
+
     def _generate_pollinations(self, prompt: str, size: tuple, seed_offset: int = 0) -> Image.Image:
         truncated = prompt[: self._POLLINATIONS_PROMPT_LIMIT]
         encoded = urllib.parse.quote(truncated)
@@ -130,7 +134,7 @@ class ImageGenerator:
             if response.status_code == 503:
                 wait = response.json().get("estimated_time", 30)
                 console.print(f"  [dim]Model loading, waiting {wait:.0f}s...[/]")
-                time.sleep(min(wait, 60))
+                time.sleep(min(wait, self._HUGGINGFACE_LOAD_WAIT_CAP))
                 continue
 
             if response.status_code == 200:
