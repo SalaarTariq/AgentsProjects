@@ -97,6 +97,9 @@ class ImageGenerator:
     # Cap our sleep so a bad estimate can't stall the whole pipeline.
     _HUGGINGFACE_LOAD_WAIT_CAP = 60
 
+    # Fallback wait when HuggingFace's 503 response omits estimated_time.
+    _HUGGINGFACE_LOAD_WAIT_DEFAULT = 30
+
     def _generate_pollinations(self, prompt: str, size: tuple, seed_offset: int = 0) -> Image.Image:
         truncated = prompt[: self._POLLINATIONS_PROMPT_LIMIT]
         encoded = urllib.parse.quote(truncated)
@@ -132,7 +135,7 @@ class ImageGenerator:
                 raise ProviderExhaustedError("HuggingFace rate limit")
 
             if response.status_code == 503:
-                wait = response.json().get("estimated_time", 30)
+                wait = response.json().get("estimated_time", self._HUGGINGFACE_LOAD_WAIT_DEFAULT)
                 console.print(f"  [dim]Model loading, waiting {wait:.0f}s...[/]")
                 time.sleep(min(wait, self._HUGGINGFACE_LOAD_WAIT_CAP))
                 continue
