@@ -42,6 +42,32 @@ BEAM_MID_GLOW_PX   = 9    # polyline thickness for the mid glow pass
 BEAM_MAIN_PX       = 4    # polyline thickness for the main bolt
 BEAM_CORE_PX       = 2    # polyline thickness for the white-hot core
 
+BEAM_OUTER_GLOW_ALPHA = 0.18   # base blend weight for outer halo, scaled by intensity
+BEAM_MID_GLOW_ALPHA   = 0.4    # base blend weight for mid glow, scaled by intensity
+
+BEAM_SEGMENT_LEN_PX   = 18     # target pixel length per jitter segment along the bolt
+BEAM_MIN_SEGMENTS     = 8      # floor on segment count so short beams still jitter
+BEAM_JITTER_RATIO     = 0.06   # perpendicular noise as a fraction of beam length
+BEAM_MAX_JITTER_PX    = 18     # absolute cap on perpendicular jitter
+BEAM_MIN_LEN_PX       = 5      # beams shorter than this are skipped to avoid noise
+
+BRANCH_CHANCE        = 0.7     # base probability of spawning forks, scaled by intensity
+BRANCH_MIN_LEN_PX    = 20      # shortest fork length in pixels
+BRANCH_MAX_LEN_PX    = 55      # longest fork length in pixels
+BRANCH_ANGLE_SPREAD  = 1.0     # ± radians of angular randomness off the main bolt
+BRANCH_JITTER_RATIO  = 0.15    # jitter on a fork as a fraction of its length
+BRANCH_SEGMENT_LEN_PX = 10     # target pixel length per jitter segment on a fork
+BRANCH_MIN_SEGMENTS  = 3       # floor on segment count for very short forks
+BRANCH_MAIN_PX       = 2       # polyline thickness for a fork's main bolt
+BRANCH_CORE_PX       = 1       # polyline thickness for a fork's white-hot core
+
+ORB_PULSE_AMPLITUDE_PX = 3     # base radius modulation from the pulse sine wave
+ORB_GLOW_EXTRA_PX      = 12    # extra radius over orb for the halo circle
+ORB_GLOW_ALPHA         = 0.3   # blend weight for the orb halo pass
+
+CORE_COLOR_GAIN   = 0.3        # weight of original color in the white-hot core blend
+CORE_COLOR_OFFSET = 200        # additive white bias in the white-hot core blend
+
 HAND_BONES = [
     (0, 1), (1, 2), (2, 3), (3, 4),
     (0, 5), (5, 6), (6, 7), (7, 8),
@@ -94,52 +120,59 @@ def draw_beam(frame, overlay, p1, p2, color, intensity: float = 1.0, branches: b
     Reuses a pre-allocated overlay buffer to avoid repeated frame.copy() calls.
     """
     length = math.hypot(p2[0] - p1[0], p2[1] - p1[1])
-    if length < 5:
+    if length < BEAM_MIN_LEN_PX:
         return
 
-    segments  = max(8, int(length / 18))
-    jitter    = min(18, length * 0.06) * intensity
+    segments  = max(BEAM_MIN_SEGMENTS, int(length / BEAM_SEGMENT_LEN_PX))
+    jitter    = min(BEAM_MAX_JITTER_PX, length * BEAM_JITTER_RATIO) * intensity
     main_path = jittered_path(p1, p2, segments, jitter)
     pts_arr   = np.array(main_path, dtype=np.int32).reshape(-1, 1, 2)
 
     # Outer glow halo
+    outer_alpha = BEAM_OUTER_GLOW_ALPHA * intensity
     np.copyto(overlay, frame)
     cv2.polylines(overlay, [pts_arr], False, color, BEAM_OUTER_GLOW_PX, cv2.LINE_AA)
-    cv2.addWeighted(overlay, 0.18 * intensity, frame, 1 - 0.18 * intensity, 0, frame)
+    cv2.addWeighted(overlay, outer_alpha, frame, 1 - outer_alpha, 0, frame)
 
     # Mid glow
+    mid_alpha = BEAM_MID_GLOW_ALPHA * intensity
     np.copyto(overlay, frame)
     cv2.polylines(overlay, [pts_arr], False, color, BEAM_MID_GLOW_PX, cv2.LINE_AA)
-    cv2.addWeighted(overlay, 0.4 * intensity, frame, 1 - 0.4 * intensity, 0, frame)
+    cv2.addWeighted(overlay, mid_alpha, frame, 1 - mid_alpha, 0, frame)
 
     # Main bolt + white-hot core
-    core_color = tuple(min(255, int(c * 0.3 + 200)) for c in color)
+    core_color = tuple(min(255, int(c * CORE_COLOR_GAIN + CORE_COLOR_OFFSET)) for c in color)
     cv2.polylines(frame, [pts_arr], False, color, BEAM_MAIN_PX, cv2.LINE_AA)
     cv2.polylines(frame, [pts_arr], False, core_color, BEAM_CORE_PX, cv2.LINE_AA)
 
     # Random forking branches
-    if branches and random.random() < 0.7 * intensity:
+    if branches and random.random() < BRANCH_CHANCE * intensity:
         for _ in range(random.randint(1, 2)):
             origin     = main_path[random.randint(2, len(main_path) - 3)]
-            branch_len = random.uniform(20, 55) * intensity
-            angle      = math.atan2(p2[1] - p1[1], p2[0] - p1[0]) + random.uniform(-1.0, 1.0)
+            branch_len = random.uniform(BRANCH_MIN_LEN_PX, BRANCH_MAX_LEN_PX) * intensity
+            angle      = (math.atan2(p2[1] - p1[1], p2[0] - p1[0])
+                          + random.uniform(-BRANCH_ANGLE_SPREAD, BRANCH_ANGLE_SPREAD))
             end        = (
                 int(origin[0] + math.cos(angle) * branch_len),
                 int(origin[1] + math.sin(angle) * branch_len),
             )
             bpath = np.array(
-                jittered_path(origin, end, max(3, int(branch_len / 10)), branch_len * 0.15),
+                jittered_path(
+                    origin, end,
+                    max(BRANCH_MIN_SEGMENTS, int(branch_len / BRANCH_SEGMENT_LEN_PX)),
+                    branch_len * BRANCH_JITTER_RATIO,
+                ),
                 dtype=np.int32,
             ).reshape(-1, 1, 2)
-            cv2.polylines(frame, [bpath], False, color, 2, cv2.LINE_AA)
-            cv2.polylines(frame, [bpath], False, core_color, 1, cv2.LINE_AA)
+            cv2.polylines(frame, [bpath], False, color, BRANCH_MAIN_PX, cv2.LINE_AA)
+            cv2.polylines(frame, [bpath], False, core_color, BRANCH_CORE_PX, cv2.LINE_AA)
 
 
 def draw_endpoint_orb(frame, overlay, pt, color, base_radius: int = 10, pulse: float = 0.0) -> None:
-    radius = int(base_radius + 3 * math.sin(pulse))
+    radius = int(base_radius + ORB_PULSE_AMPLITUDE_PX * math.sin(pulse))
     np.copyto(overlay, frame)
-    cv2.circle(overlay, pt, radius + 12, color, -1, cv2.LINE_AA)
-    cv2.addWeighted(overlay, 0.3, frame, 0.7, 0, frame)
+    cv2.circle(overlay, pt, radius + ORB_GLOW_EXTRA_PX, color, -1, cv2.LINE_AA)
+    cv2.addWeighted(overlay, ORB_GLOW_ALPHA, frame, 1 - ORB_GLOW_ALPHA, 0, frame)
     cv2.circle(frame, pt, radius, color, -1, cv2.LINE_AA)
     bright = tuple(min(255, int(c * 0.3 + 180)) for c in color)
     cv2.circle(frame, pt, max(2, radius // 2), bright, -1, cv2.LINE_AA)
