@@ -32,6 +32,16 @@ GLOW_OUTER_EXTRA_PX = 14   # extra thickness over core for the outer halo pass
 GLOW_MID_EXTRA_PX   = 7    # extra thickness over core for the mid glow pass
 GLOW_RIM_EXTRA_PX   = 2    # extra thickness over core for the rim pass before the core stroke
 
+GLOW_OUTER_ALPHA = 0.18    # blend weight for the wide faint outer halo pass
+GLOW_MID_ALPHA   = 0.35    # blend weight for the medium-thickness mid glow pass
+NODE_GLOW_ALPHA  = 0.35    # blend weight for the endpoint node halo
+NODE_GLOW_EXTRA_PX = 6     # extra radius over node for the halo circle
+
+SKELETON_BONE_COLOR  = (90, 90, 90)
+SKELETON_BONE_PX     = 1
+SKELETON_POINT_COLOR = (180, 180, 180)
+SKELETON_POINT_PX    = 2
+
 HAND_BONES = [
     (0, 1), (1, 2), (2, 3), (3, 4),
     (0, 5), (5, 6), (6, 7), (7, 8),
@@ -57,9 +67,10 @@ def draw_hand_skeleton(frame, overlay, hand_lm, w: int, h: int) -> None:
     lm = hand_lm.landmark
     for a, b in HAND_BONES:
         pa, pb = landmark_to_px(lm[a], w, h), landmark_to_px(lm[b], w, h)
-        cv2.line(frame, pa, pb, (90, 90, 90), 1, cv2.LINE_AA)
+        cv2.line(frame, pa, pb, SKELETON_BONE_COLOR, SKELETON_BONE_PX, cv2.LINE_AA)
     for point in lm:
-        cv2.circle(frame, landmark_to_px(point, w, h), 2, (180, 180, 180), -1, cv2.LINE_AA)
+        cv2.circle(frame, landmark_to_px(point, w, h), SKELETON_POINT_PX,
+                   SKELETON_POINT_COLOR, -1, cv2.LINE_AA)
 
 
 def draw_glow_line(frame, overlay, p1, p2, color, core_thickness: int = 3) -> None:
@@ -68,11 +79,11 @@ def draw_glow_line(frame, overlay, p1, p2, color, core_thickness: int = 3) -> No
     """
     np.copyto(overlay, frame)
     cv2.line(overlay, p1, p2, color, core_thickness + GLOW_OUTER_EXTRA_PX, cv2.LINE_AA)
-    cv2.addWeighted(overlay, 0.18, frame, 0.82, 0, frame)
+    cv2.addWeighted(overlay, GLOW_OUTER_ALPHA, frame, 1 - GLOW_OUTER_ALPHA, 0, frame)
 
     np.copyto(overlay, frame)
     cv2.line(overlay, p1, p2, color, core_thickness + GLOW_MID_EXTRA_PX, cv2.LINE_AA)
-    cv2.addWeighted(overlay, 0.35, frame, 0.65, 0, frame)
+    cv2.addWeighted(overlay, GLOW_MID_ALPHA, frame, 1 - GLOW_MID_ALPHA, 0, frame)
 
     cv2.line(frame, p1, p2, color, core_thickness + GLOW_RIM_EXTRA_PX, cv2.LINE_AA)
     bright = tuple(min(255, int(c * 0.5 + 130)) for c in color)
@@ -81,8 +92,8 @@ def draw_glow_line(frame, overlay, p1, p2, color, core_thickness: int = 3) -> No
 
 def draw_endpoint_node(frame, overlay, pt, color, radius: int = 8) -> None:
     np.copyto(overlay, frame)
-    cv2.circle(overlay, pt, radius + 6, color, -1, cv2.LINE_AA)
-    cv2.addWeighted(overlay, 0.35, frame, 0.65, 0, frame)
+    cv2.circle(overlay, pt, radius + NODE_GLOW_EXTRA_PX, color, -1, cv2.LINE_AA)
+    cv2.addWeighted(overlay, NODE_GLOW_ALPHA, frame, 1 - NODE_GLOW_ALPHA, 0, frame)
     cv2.circle(frame, pt, radius, color, -1, cv2.LINE_AA)
     bright = tuple(min(255, int(c * 0.4 + 150)) for c in color)
     cv2.circle(frame, pt, max(1, radius // 2), bright, -1, cv2.LINE_AA)
