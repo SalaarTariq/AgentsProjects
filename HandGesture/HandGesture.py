@@ -41,6 +41,8 @@ LINE_CORE_BASE_PX        = 2     # minimum core stroke thickness for a finger co
 LINE_STRETCH_CAP_PX      = 600   # line length beyond which thickness stops growing
 LINE_STRETCH_STEP_PX     = 200   # pixels of stretch that add one px of core thickness
 
+FPS_EMA_ALPHA = 0.1  # weight for the newest 1/frame_dt sample in the FPS readout (0=frozen, 1=raw)
+
 SKELETON_BONE_COLOR  = (90, 90, 90)
 SKELETON_BONE_PX     = 1
 SKELETON_POINT_COLOR = (180, 180, 180)
@@ -149,7 +151,7 @@ def main() -> None:
                 black   = np.zeros_like(frame)
 
             now       = time.time()
-            fps       = 0.9 * fps + 0.1 / max(now - prev_time, 1e-6)
+            fps       = (1 - FPS_EMA_ALPHA) * fps + FPS_EMA_ALPHA / max(now - prev_time, 1e-6)
             prev_time = now
 
             rgb     = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
