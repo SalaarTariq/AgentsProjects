@@ -37,6 +37,10 @@ GLOW_MID_ALPHA   = 0.35    # blend weight for the medium-thickness mid glow pass
 NODE_GLOW_ALPHA  = 0.35    # blend weight for the endpoint node halo
 NODE_GLOW_EXTRA_PX = 6     # extra radius over node for the halo circle
 
+LINE_CORE_BASE_PX        = 2     # minimum core stroke thickness for a finger connection line
+LINE_STRETCH_CAP_PX      = 600   # line length beyond which thickness stops growing
+LINE_STRETCH_STEP_PX     = 200   # pixels of stretch that add one px of core thickness
+
 SKELETON_BONE_COLOR  = (90, 90, 90)
 SKELETON_BONE_PX     = 1
 SKELETON_POINT_COLOR = (180, 180, 180)
@@ -194,7 +198,9 @@ def main() -> None:
                     color = hsv_to_bgr(hue)
 
                     # Thickness scales with stretch so long lines feel taut
-                    core = 2 + int(min(length, 600) / 200)
+                    core = LINE_CORE_BASE_PX + int(
+                        min(length, LINE_STRETCH_CAP_PX) / LINE_STRETCH_STEP_PX
+                    )
                     draw_glow_line(frame, overlay, p1, p2, color, core_thickness=core)
                     draw_endpoint_node(frame, overlay, p1, color, radius=7)
                     draw_endpoint_node(frame, overlay, p2, color, radius=7)
