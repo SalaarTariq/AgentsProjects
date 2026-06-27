@@ -306,6 +306,7 @@ def main() -> None:
             # Prune smoothed positions for hands that have left the frame
             active_keys   = {(lbl, fi) for lbl, tips in per_hand_tips.items() for fi in tips}
             smoothed_tips = {k: v for k, v in smoothed_tips.items() if k in active_keys}
+            prev_tips     = {k: v for k, v in prev_tips.items() if k in active_keys}
 
             # HUD
             cv2.putText(frame, f"FPS {fps:.0f}", (w - 80, 30),
