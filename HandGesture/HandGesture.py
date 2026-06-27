@@ -69,7 +69,7 @@ def landmark_to_px(landmark, w: int, h: int) -> tuple:
     return int(landmark.x * w), int(landmark.y * h)
 
 
-def draw_hand_skeleton(frame, overlay, hand_lm, w: int, h: int) -> None:
+def draw_hand_skeleton(frame, hand_lm, w: int, h: int) -> None:
     lm = hand_lm.landmark
     for a, b in HAND_BONES:
         pa, pb = landmark_to_px(lm[a], w, h), landmark_to_px(lm[b], w, h)
@@ -169,7 +169,7 @@ def main() -> None:
                     label     = "Right" if raw_label == "Left" else "Left"
 
                     if show_skeleton:
-                        draw_hand_skeleton(frame, overlay, hand_lm, w, h)
+                        draw_hand_skeleton(frame, hand_lm, w, h)
 
                     tips = {}
                     for fi, tid in enumerate(TIP_IDS):
