@@ -32,6 +32,8 @@ TOP_K_RETRIEVE = 12   # hybrid candidates before rerank
 TOP_K_FINAL = 6       # passages passed to the LLM
 MAX_CONTEXT_CHARS = 9000
 MAX_HISTORY_MESSAGES = 8  # last 4 user+assistant turns kept for rewrite and prompt
+DEFAULT_LLM_TEMPERATURE = 0.2   # answer generation — slight creativity, mostly grounded
+REWRITE_TEMPERATURE = 0.0       # query rewriting — deterministic, preserves legal terms
 
 Mode = Literal["quick", "brief", "drafting", "compare"]
 
@@ -139,7 +141,7 @@ _llm_cache: dict[tuple[str, bool, float], ChatGroq] = {}
 _reranker = None
 
 
-def get_llm(model: str = DEFAULT_MODEL, *, streaming: bool = False, temperature: float = 0.2) -> ChatGroq:
+def get_llm(model: str = DEFAULT_MODEL, *, streaming: bool = False, temperature: float = DEFAULT_LLM_TEMPERATURE) -> ChatGroq:
     if not os.getenv("GROQ_API_KEY"):
         raise RuntimeError(
             "GROQ_API_KEY is not set. Add it to your .env file or environment."
@@ -186,7 +188,7 @@ def rewrite_query(question: str, history: list[dict] | None) -> str:
     # Only the recent turns inform the rewrite — older context is irrelevant for
     # disambiguating "what about clause 4?" style follow-ups and just costs tokens.
     bounded = _history_to_messages(history)[-MAX_HISTORY_MESSAGES:]
-    chain = REWRITE_PROMPT | get_llm(temperature=0.0) | StrOutputParser()
+    chain = REWRITE_PROMPT | get_llm(temperature=REWRITE_TEMPERATURE) | StrOutputParser()
     try:
         out = chain.invoke({"history": bounded, "question": question})
         return (out or question).strip()
