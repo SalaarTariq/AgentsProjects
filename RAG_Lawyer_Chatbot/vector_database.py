@@ -27,6 +27,7 @@ MMR_LAMBDA = 0.5           # 0 = max diversity, 1 = max relevance
 DEFAULT_BM25_K = 8
 DEFAULT_DENSE_K = 8
 DEFAULT_HYBRID_K = 8
+DOC_KEY_CONTENT_HASH_CHARS = 120  # prefix length hashed into the doc dedup key
 
 # Legal-aware separators: respect article/section/clause boundaries before falling
 # back to paragraphs and sentences. Keeps related authority in one chunk.
@@ -149,7 +150,7 @@ def _doc_key(d: Document) -> str:
     src = d.metadata.get("source", "")
     page = d.metadata.get("page", "")
     cid = d.metadata.get("chunk_id", "")
-    return f"{src}|{page}|{cid}|{hash(d.page_content[:120])}"
+    return f"{src}|{page}|{cid}|{hash(d.page_content[:DOC_KEY_CONTENT_HASH_CHARS])}"
 
 
 def build_hybrid_store(paths: Iterable[str | Path]) -> HybridStore:
