@@ -44,67 +44,80 @@ counter-arguments, risk grading, and recommended next steps.
               │                                            │
               ├──► FAISS (MiniLM, normalized) ──┐          │
               └──► BM25 ────────────────────────┤          │
-                                                ▼          │
-                                ┌─── ask ───────┴──────────┘
-                                ▼
-       query + history ──► rewrite (Groq) ──► standalone query
-                                                  │
-                                                  ▼
-                                hybrid retrieve (RRF over dense+sparse)
-                                                  │
-                                                  ▼
-                          cross-encoder rerank → top-k passages
-                                                  │
-                                                  ▼
-                              mode-specific Counsel system prompt
-                                                  │
-                                                  ▼
-                                       Groq Llama 3.3 70B (stream)
-                                                  │
-                                                  ▼
-                                 inline [n] citations → UI sources rail
+                                                 ▼          │
+                                 ┌─── ask ───────┴──────────┘
+                                 ▼
+        query + history ──► rewrite (Groq) ──► standalone query
+                                                   │
+                                                   ▼
+                                 hybrid retrieve (RRF over dense+sparse)
+                                                   │
+                                                   ▼
+                           cross-encoder rerank → top-k passages
+                                                   │
+                                                   ▼
+                               mode-specific Counsel system prompt
+                                                   │
+                                                   ▼
+                                        Groq Llama 3.3 70B (stream)
+                                                   │
+                                                   ▼
+                                  inline [n] citations → UI sources rail
 ```
 
-## Setup
+## Quick Start
 
-1. Get a Groq API key from <https://console.groq.com> and copy `.env.example`:
+### Prerequisites
+- Python 3.11 or higher
+- Groq API key from [console.groq.com](https://console.groq.com)
 
-   ```bash
-   cp .env.example .env
-   # edit .env and paste your key
-   ```
+### Installation
 
-2. Install deps (Python 3.11 recommended):
+1. Clone the repository and navigate to the project directory:
 
-   ```bash
-   pipenv install
-   pipenv shell
-   ```
+```bash
+git clone https://github.com/SalaarTariq/AgentsProjects.git
+cd AgentsProjects/RAG_Lawyer_Chatbot
+```
 
-   Or with pip:
+2. Get a Groq API key from <https://console.groq.com> and configure:
 
-   ```bash
-   pip install streamlit langchain langchain-community langchain-groq \
-               langchain-huggingface langchain-text-splitters \
-               faiss-cpu pypdf sentence-transformers rank-bm25 \
-               python-dotenv fastapi uvicorn python-multipart
-   ```
+```bash
+cp .env.example .env
+# edit .env and paste your Groq API key
+```
 
-3. Run the app:
+3. Install dependencies (Python 3.11 recommended):
 
-   **FastAPI (recommended — streaming, modes, sidebar UI):**
+```bash
+pipenv install
+pipenv shell
+```
 
-   ```bash
-   uvicorn app:app --reload
-   ```
+Or with pip:
 
-   Open <http://127.0.0.1:8000>.
+```bash
+pip install streamlit langchain langchain-community langchain-groq \
+            langchain-huggingface langchain-text-splitters \
+            faiss-cpu pypdf sentence-transformers rank-bm25 \
+            python-dotenv fastapi uvicorn python-multipart
+```
 
-   **Streamlit (alternative):**
+### Running the Application
 
-   ```bash
-   streamlit run frontend.py
-   ```
+**FastAPI (recommended — streaming, modes, sidebar UI):**
+
+```bash
+uvicorn app:app --reload
+```
+
+Open <http://127.0.0.1:8000> in your browser.
+
+**Streamlit (alternative):**
+
+```bash
+streamlit run frontend.py
+```
 
 ## Usage
 
@@ -124,32 +137,38 @@ counter-arguments, risk grading, and recommended next steps.
 | **Drafting** | You need language to paste | Purpose + fenced draft block + Notes |
 | **Compare** | Comparing clauses/docs | Side-by-side table + Material differences + Recommendation |
 
-## Files
+## Project Structure
 
-- `app.py` — FastAPI: `/api/upload`, `/api/ask`, `/api/ask/stream` (SSE),
-  `/api/samples`, `/api/status`, `/api/health`, `/api/reset`, `/api/history/clear`.
-  Per-session hybrid store + chat history with TTL eviction.
-- `rag_pipeline.py` — Query rewrite, hybrid retrieval, cross-encoder rerank,
-  mode-specific senior-counsel prompts, sync + streaming answer APIs.
-- `vector_database.py` — Loader, legal-aware splitter, metadata extraction,
-  `HybridStore` (FAISS + BM25 + RRF + MMR).
-- `static/` — `index.html`, `styles.css`, `app.js` for the streaming UI.
-- `frontend.py` — Streamlit alternative (no streaming).
-- `sample_docs/` — bundled public-domain corpus.
+- `app.py` — FastAPI backend with endpoints for upload, Q&A, streaming, and session management
+- `rag_pipeline.py` — Query rewriting, retrieval, reranking, and response generation
+- `vector_database.py` — Document loading, chunking, metadata extraction, and hybrid search
+- `static/` — Frontend files (`index.html`, `styles.css`, `app.js`)
+- `frontend.py` — Streamlit alternative interface
+- `sample_docs/` — Sample legal documents for testing
 
-## Sample documents
+## Sample Documents
 
 `sample_docs/blackstone_commentaries_book1.txt` — Sir William Blackstone,
 *Commentaries on the Laws of England, Book the First* (public domain, via
 Project Gutenberg).
 
-## Notes & honest limits
+## Notes & Important Disclaimers
 
-- First run downloads `all-MiniLM-L6-v2` (~80 MB) and
-  `ms-marco-MiniLM-L-6-v2` (~80 MB) on first reranked query.
-- Vector + BM25 indices are in-memory per session. To persist across
-  restarts, wire `save_vector_store` / `load_vector_store` in
-  `vector_database.py`.
-- Answers are grounded in your uploaded documents and are **informational
-  only — not legal advice** and do not create an attorney–client
-  relationship.
+- **First run** downloads embedding models (~160 MB total) on first indexed query
+- **In-memory indices** — Vector and BM25 indices are stored per-session. For persistence, implement the save/load methods in `vector_database.py`
+- **Legal disclaimer** — Answers are informational only and do not constitute legal advice. This tool does not create an attorney–client relationship
+- **Data privacy** — Ensure uploaded documents comply with your organization's data handling policies
+
+## Performance Notes
+
+- Initial model download occurs on first use (~3-5 minutes)
+- Subsequent queries benefit from in-memory caching
+- For production use, consider persisting indices to disk
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit pull requests or open issues for bugs and feature requests.
+
+## License
+
+This project is part of the AgentsProjects repository. See LICENSE for details.
