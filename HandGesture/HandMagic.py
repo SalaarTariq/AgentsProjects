@@ -71,6 +71,8 @@ CORE_COLOR_OFFSET = 200        # additive white bias in the white-hot core blend
 SKELETON_BONE_COLOR = (70, 70, 80)  # BGR color for the hand-bone lines when 'h' is toggled on
 SKELETON_BONE_PX    = 1             # stroke thickness for the hand-bone lines
 
+FPS_EMA_ALPHA = 0.1  # weight for the newest 1/frame_dt sample in the FPS readout (0=frozen, 1=raw)
+
 HAND_BONES = [
     (0, 1), (1, 2), (2, 3), (3, 4),
     (0, 5), (5, 6), (6, 7), (7, 8),
@@ -232,7 +234,7 @@ def main() -> None:
 
             now       = time.time()
             t_elapsed = now - start_time
-            fps       = 0.9 * fps + 0.1 / max(now - prev_time, 1e-6)
+            fps       = (1 - FPS_EMA_ALPHA) * fps + FPS_EMA_ALPHA / max(now - prev_time, 1e-6)
             prev_time = now
 
             # Darken background heavily so beams glow (reuses pre-alloc'd black)
