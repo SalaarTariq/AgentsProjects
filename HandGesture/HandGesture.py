@@ -52,6 +52,22 @@ FPS_EMA_ALPHA = 0.1  # weight for the newest 1/frame_dt sample in the FPS readou
 SAVE_MSG_DURATION_S   = 2.0            # how long the "Saved <file>" HUD toast lingers after pressing 's'
 SCREENSHOT_FILE_PREFIX = "hand_lines"  # prefix for PNG snapshots saved by the 's' key
 
+HUD_STATUS_FONT_SCALE  = 0.7             # cv2.putText scale for the top-left "5 lines active" / prompt banner
+HUD_STATUS_THICKNESS   = 2               # stroke thickness for the top-left status banner
+HUD_STATUS_COLOR_ON    = (0, 255, 180)   # BGR color when both hands are connected
+HUD_STATUS_COLOR_OFF   = (180, 180, 180) # BGR color for the "show both hands" prompt
+
+HUD_FPS_FONT_SCALE     = 0.6             # cv2.putText scale for the top-right FPS readout
+HUD_FPS_THICKNESS      = 1               # stroke thickness for the FPS readout
+HUD_FPS_COLOR          = (160, 160, 160) # BGR color for the FPS readout
+
+HUD_SAVE_FONT_SCALE    = 0.6             # cv2.putText scale for the bottom-left "Saved <file>" toast
+HUD_SAVE_THICKNESS     = 2               # stroke thickness for the save toast
+HUD_SAVE_COLOR         = (0, 255, 0)     # BGR color for the save toast
+
+HUD_LABEL_FONT_SCALE   = 0.45            # cv2.putText scale for the per-finger name printed on each line
+HUD_LABEL_COLOR        = (240, 240, 240) # BGR color for the per-finger name
+
 SKELETON_BONE_COLOR  = (90, 90, 90)
 SKELETON_BONE_PX     = 1
 SKELETON_POINT_COLOR = (180, 180, 180)
@@ -219,14 +235,16 @@ def main() -> None:
                     mx = (p1[0] + p2[0]) // 2
                     my = (p1[1] + p2[1]) // 2 - 10
                     cv2.putText(frame, FINGER_NAMES[fi], (mx - 22, my),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (240, 240, 240), 1, cv2.LINE_AA)
+                                cv2.FONT_HERSHEY_SIMPLEX, HUD_LABEL_FONT_SCALE,
+                                HUD_LABEL_COLOR, 1, cv2.LINE_AA)
 
                 cv2.putText(frame, "5 lines active", (10, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 180), 2, cv2.LINE_AA)
+                            cv2.FONT_HERSHEY_SIMPLEX, HUD_STATUS_FONT_SCALE,
+                            HUD_STATUS_COLOR_ON, HUD_STATUS_THICKNESS, cv2.LINE_AA)
             else:
                 cv2.putText(frame, "Show both hands to connect fingers",
-                            (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
-                            (180, 180, 180), 2, cv2.LINE_AA)
+                            (10, 30), cv2.FONT_HERSHEY_SIMPLEX, HUD_STATUS_FONT_SCALE,
+                            HUD_STATUS_COLOR_OFF, HUD_STATUS_THICKNESS, cv2.LINE_AA)
 
             # Prune smoothed positions for hands that have left the frame
             active_keys   = {(lbl, fi) for lbl, tips in per_hand_tips.items() for fi in tips}
@@ -234,10 +252,12 @@ def main() -> None:
 
             # HUD
             cv2.putText(frame, f"FPS {fps:.0f}", (w - 80, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (160, 160, 160), 1, cv2.LINE_AA)
+                        cv2.FONT_HERSHEY_SIMPLEX, HUD_FPS_FONT_SCALE,
+                        HUD_FPS_COLOR, HUD_FPS_THICKNESS, cv2.LINE_AA)
             if save_msg and now - save_msg_time < SAVE_MSG_DURATION_S:
                 cv2.putText(frame, save_msg, (10, h - 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2, cv2.LINE_AA)
+                            cv2.FONT_HERSHEY_SIMPLEX, HUD_SAVE_FONT_SCALE,
+                            HUD_SAVE_COLOR, HUD_SAVE_THICKNESS, cv2.LINE_AA)
 
             cv2.imshow(window_name, frame)
             key = cv2.waitKey(1) & 0xFF
