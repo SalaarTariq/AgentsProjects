@@ -41,6 +41,9 @@ LINE_CORE_BASE_PX        = 2     # minimum core stroke thickness for a finger co
 LINE_STRETCH_CAP_PX      = 600   # line length beyond which thickness stops growing
 LINE_STRETCH_STEP_PX     = 200   # pixels of stretch that add one px of core thickness
 
+LINE_CORE_BRIGHT_GAIN   = 0.5    # weight of original color in the bright core-stroke blend
+LINE_CORE_BRIGHT_OFFSET = 130    # additive white bias in the bright core-stroke blend
+
 FPS_EMA_ALPHA = 0.1  # weight for the newest 1/frame_dt sample in the FPS readout (0=frozen, 1=raw)
 
 SAVE_MSG_DURATION_S   = 2.0            # how long the "Saved <file>" HUD toast lingers after pressing 's'
@@ -95,7 +98,7 @@ def draw_glow_line(frame, overlay, p1, p2, color, core_thickness: int = 3) -> No
     cv2.addWeighted(overlay, GLOW_MID_ALPHA, frame, 1 - GLOW_MID_ALPHA, 0, frame)
 
     cv2.line(frame, p1, p2, color, core_thickness + GLOW_RIM_EXTRA_PX, cv2.LINE_AA)
-    bright = tuple(min(255, int(c * 0.5 + 130)) for c in color)
+    bright = tuple(min(255, int(c * LINE_CORE_BRIGHT_GAIN + LINE_CORE_BRIGHT_OFFSET)) for c in color)
     cv2.line(frame, p1, p2, bright, core_thickness, cv2.LINE_AA)
 
 
