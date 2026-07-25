@@ -37,6 +37,9 @@ GLOW_MID_ALPHA   = 0.35    # blend weight for the medium-thickness mid glow pass
 NODE_GLOW_ALPHA  = 0.35    # blend weight for the endpoint node halo
 NODE_GLOW_EXTRA_PX = 6     # extra radius over node for the halo circle
 
+NODE_INNER_BRIGHT_GAIN   = 0.4  # weight of original color in the endpoint-node inner-dot blend
+NODE_INNER_BRIGHT_OFFSET = 150  # additive white bias in the endpoint-node inner-dot blend
+
 LINE_CORE_BASE_PX        = 2     # minimum core stroke thickness for a finger connection line
 LINE_STRETCH_CAP_PX      = 600   # line length beyond which thickness stops growing
 LINE_STRETCH_STEP_PX     = 200   # pixels of stretch that add one px of core thickness
@@ -107,7 +110,7 @@ def draw_endpoint_node(frame, overlay, pt, color, radius: int = 8) -> None:
     cv2.circle(overlay, pt, radius + NODE_GLOW_EXTRA_PX, color, -1, cv2.LINE_AA)
     cv2.addWeighted(overlay, NODE_GLOW_ALPHA, frame, 1 - NODE_GLOW_ALPHA, 0, frame)
     cv2.circle(frame, pt, radius, color, -1, cv2.LINE_AA)
-    bright = tuple(min(255, int(c * 0.4 + 150)) for c in color)
+    bright = tuple(min(255, int(c * NODE_INNER_BRIGHT_GAIN + NODE_INNER_BRIGHT_OFFSET)) for c in color)
     cv2.circle(frame, pt, max(1, radius // 2), bright, -1, cv2.LINE_AA)
 
 
