@@ -73,6 +73,8 @@ SKELETON_BONE_PX    = 1             # stroke thickness for the hand-bone lines
 
 FPS_EMA_ALPHA = 0.1  # weight for the newest 1/frame_dt sample in the FPS readout (0=frozen, 1=raw)
 
+SAVE_MSG_DURATION_S = 2.0  # how long the "Saved <file>" HUD toast lingers after pressing 's'
+
 HAND_BONES = [
     (0, 1), (1, 2), (2, 3), (3, 4),
     (0, 5), (5, 6), (6, 7), (7, 8),
@@ -316,7 +318,7 @@ def main() -> None:
             # HUD
             cv2.putText(frame, f"FPS {fps:.0f}", (w - 80, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (160, 160, 160), 1, cv2.LINE_AA)
-            if save_msg and now - save_msg_time < 2.0:
+            if save_msg and now - save_msg_time < SAVE_MSG_DURATION_S:
                 cv2.putText(frame, save_msg, (10, h - 20),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2, cv2.LINE_AA)
 
