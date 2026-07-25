@@ -73,7 +73,8 @@ SKELETON_BONE_PX    = 1             # stroke thickness for the hand-bone lines
 
 FPS_EMA_ALPHA = 0.1  # weight for the newest 1/frame_dt sample in the FPS readout (0=frozen, 1=raw)
 
-SAVE_MSG_DURATION_S = 2.0  # how long the "Saved <file>" HUD toast lingers after pressing 's'
+SAVE_MSG_DURATION_S    = 2.0           # how long the "Saved <file>" HUD toast lingers after pressing 's'
+SCREENSHOT_FILE_PREFIX = "hand_magic"  # prefix for PNG snapshots saved by the 's' key
 
 HAND_BONES = [
     (0, 1), (1, 2), (2, 3), (3, 4),
@@ -329,7 +330,7 @@ def main() -> None:
             elif key == ord('h'):
                 show_skeleton = not show_skeleton
             elif key == ord('s'):
-                fname         = f"hand_magic_{int(now)}.png"
+                fname         = f"{SCREENSHOT_FILE_PREFIX}_{int(now)}.png"
                 cv2.imwrite(fname, frame)
                 save_msg      = f"Saved {fname}"
                 save_msg_time = now
