@@ -60,6 +60,8 @@ BRANCH_SEGMENT_LEN_PX = 10     # target pixel length per jitter segment on a for
 BRANCH_MIN_SEGMENTS  = 3       # floor on segment count for very short forks
 BRANCH_MAIN_PX       = 2       # polyline thickness for a fork's main bolt
 BRANCH_CORE_PX       = 1       # polyline thickness for a fork's white-hot core
+BRANCH_MIN_COUNT     = 1       # fewest forks spawned in a single beam when the branch roll passes
+BRANCH_MAX_COUNT     = 2       # most forks spawned in a single beam when the branch roll passes
 
 ORB_PULSE_AMPLITUDE_PX = 3     # base radius modulation from the pulse sine wave
 ORB_GLOW_EXTRA_PX      = 12    # extra radius over orb for the halo circle
@@ -155,7 +157,7 @@ def draw_beam(frame, overlay, p1, p2, color, intensity: float = 1.0, branches: b
 
     # Random forking branches
     if branches and random.random() < BRANCH_CHANCE * intensity:
-        for _ in range(random.randint(1, 2)):
+        for _ in range(random.randint(BRANCH_MIN_COUNT, BRANCH_MAX_COUNT)):
             origin     = main_path[random.randint(2, len(main_path) - 3)]
             branch_len = random.uniform(BRANCH_MIN_LEN_PX, BRANCH_MAX_LEN_PX) * intensity
             angle      = (math.atan2(p2[1] - p1[1], p2[0] - p1[0])
