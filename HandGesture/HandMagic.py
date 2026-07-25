@@ -68,6 +68,9 @@ ORB_GLOW_ALPHA         = 0.3   # blend weight for the orb halo pass
 CORE_COLOR_GAIN   = 0.3        # weight of original color in the white-hot core blend
 CORE_COLOR_OFFSET = 200        # additive white bias in the white-hot core blend
 
+SKELETON_BONE_COLOR = (70, 70, 80)  # BGR color for the hand-bone lines when 'h' is toggled on
+SKELETON_BONE_PX    = 1             # stroke thickness for the hand-bone lines
+
 HAND_BONES = [
     (0, 1), (1, 2), (2, 3), (3, 4),
     (0, 5), (5, 6), (6, 7), (7, 8),
@@ -93,7 +96,7 @@ def draw_hand_skeleton(frame, hand_lm, w: int, h: int) -> None:
     lm = hand_lm.landmark
     for a, b in HAND_BONES:
         pa, pb = landmark_to_px(lm[a], w, h), landmark_to_px(lm[b], w, h)
-        cv2.line(frame, pa, pb, (70, 70, 80), 1, cv2.LINE_AA)
+        cv2.line(frame, pa, pb, SKELETON_BONE_COLOR, SKELETON_BONE_PX, cv2.LINE_AA)
 
 
 def jittered_path(p1, p2, segments: int, jitter: float) -> list:
