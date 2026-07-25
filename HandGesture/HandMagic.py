@@ -67,6 +67,12 @@ ORB_PULSE_AMPLITUDE_PX = 3     # base radius modulation from the pulse sine wave
 ORB_GLOW_EXTRA_PX      = 12    # extra radius over orb for the halo circle
 ORB_GLOW_ALPHA         = 0.3   # blend weight for the orb halo pass
 
+ORB_BRIGHT_GAIN   = 0.3        # weight of original color in the orb mid-ring bright blend
+ORB_BRIGHT_OFFSET = 180        # additive white bias in the orb mid-ring bright blend
+ORB_MID_RADIUS_DIV  = 2        # divisor applied to the orb radius to size the bright mid-ring
+ORB_CORE_RADIUS_DIV = 4        # divisor applied to the orb radius to size the white center dot
+ORB_CORE_COLOR      = (255, 255, 255)  # BGR color for the white center dot at the orb core
+
 CORE_COLOR_GAIN   = 0.3        # weight of original color in the white-hot core blend
 CORE_COLOR_OFFSET = 200        # additive white bias in the white-hot core blend
 
@@ -184,9 +190,9 @@ def draw_endpoint_orb(frame, overlay, pt, color, base_radius: int = 10, pulse: f
     cv2.circle(overlay, pt, radius + ORB_GLOW_EXTRA_PX, color, -1, cv2.LINE_AA)
     cv2.addWeighted(overlay, ORB_GLOW_ALPHA, frame, 1 - ORB_GLOW_ALPHA, 0, frame)
     cv2.circle(frame, pt, radius, color, -1, cv2.LINE_AA)
-    bright = tuple(min(255, int(c * 0.3 + 180)) for c in color)
-    cv2.circle(frame, pt, max(2, radius // 2), bright, -1, cv2.LINE_AA)
-    cv2.circle(frame, pt, max(1, radius // 4), (255, 255, 255), -1, cv2.LINE_AA)
+    bright = tuple(min(255, int(c * ORB_BRIGHT_GAIN + ORB_BRIGHT_OFFSET)) for c in color)
+    cv2.circle(frame, pt, max(2, radius // ORB_MID_RADIUS_DIV), bright, -1, cv2.LINE_AA)
+    cv2.circle(frame, pt, max(1, radius // ORB_CORE_RADIUS_DIV), ORB_CORE_COLOR, -1, cv2.LINE_AA)
 
 
 def main() -> None:
