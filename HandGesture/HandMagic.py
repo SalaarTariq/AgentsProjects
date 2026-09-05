@@ -73,6 +73,13 @@ ORB_MID_RADIUS_DIV  = 2        # divisor applied to the orb radius to size the b
 ORB_CORE_RADIUS_DIV = 4        # divisor applied to the orb radius to size the white center dot
 ORB_CORE_COLOR      = (255, 255, 255)  # BGR color for the white center dot at the orb core
 
+ORB_DEFAULT_RADIUS_PX  = 10    # fallback orb radius when a caller does not pass one
+ORB_LINKED_RADIUS_PX   = 9     # orb radius at each end of a two-hand beam
+ORB_SPARK_RADIUS_PX    = 7     # orb radius for the single-hand fingertip sparks
+ORB_PULSE_SPEED        = 4     # radians per second of the orb pulse sine wave
+ORB_MID_MIN_RADIUS_PX  = 2     # floor so the bright mid-ring stays visible on small orbs
+ORB_CORE_MIN_RADIUS_PX = 1     # floor so the white center dot never rounds away
+
 CORE_COLOR_GAIN   = 0.3        # weight of original color in the white-hot core blend
 CORE_COLOR_OFFSET = 200        # additive white bias in the white-hot core blend
 
@@ -184,15 +191,18 @@ def draw_beam(frame, overlay, p1, p2, color, intensity: float = 1.0, branches: b
             cv2.polylines(frame, [bpath], False, core_color, BRANCH_CORE_PX, cv2.LINE_AA)
 
 
-def draw_endpoint_orb(frame, overlay, pt, color, base_radius: int = 10, pulse: float = 0.0) -> None:
+def draw_endpoint_orb(frame, overlay, pt, color,
+                      base_radius: int = ORB_DEFAULT_RADIUS_PX, pulse: float = 0.0) -> None:
     radius = int(base_radius + ORB_PULSE_AMPLITUDE_PX * math.sin(pulse))
     np.copyto(overlay, frame)
     cv2.circle(overlay, pt, radius + ORB_GLOW_EXTRA_PX, color, -1, cv2.LINE_AA)
     cv2.addWeighted(overlay, ORB_GLOW_ALPHA, frame, 1 - ORB_GLOW_ALPHA, 0, frame)
     cv2.circle(frame, pt, radius, color, -1, cv2.LINE_AA)
     bright = tuple(min(255, int(c * ORB_BRIGHT_GAIN + ORB_BRIGHT_OFFSET)) for c in color)
-    cv2.circle(frame, pt, max(2, radius // ORB_MID_RADIUS_DIV), bright, -1, cv2.LINE_AA)
-    cv2.circle(frame, pt, max(1, radius // ORB_CORE_RADIUS_DIV), ORB_CORE_COLOR, -1, cv2.LINE_AA)
+    cv2.circle(frame, pt, max(ORB_MID_MIN_RADIUS_PX, radius // ORB_MID_RADIUS_DIV),
+               bright, -1, cv2.LINE_AA)
+    cv2.circle(frame, pt, max(ORB_CORE_MIN_RADIUS_PX, radius // ORB_CORE_RADIUS_DIV),
+               ORB_CORE_COLOR, -1, cv2.LINE_AA)
 
 
 def main() -> None:
@@ -300,9 +310,11 @@ def main() -> None:
 
                     draw_beam(frame, overlay, p1, p2, color, intensity=intensity, branches=True)
 
-                    pulse = t_elapsed * 4 + fi
-                    draw_endpoint_orb(frame, overlay, p1, color, base_radius=9, pulse=pulse)
-                    draw_endpoint_orb(frame, overlay, p2, color, base_radius=9, pulse=pulse + math.pi)
+                    pulse = t_elapsed * ORB_PULSE_SPEED + fi
+                    draw_endpoint_orb(frame, overlay, p1, color,
+                                      base_radius=ORB_LINKED_RADIUS_PX, pulse=pulse)
+                    draw_endpoint_orb(frame, overlay, p2, color,
+                                      base_radius=ORB_LINKED_RADIUS_PX, pulse=pulse + math.pi)
 
                 cv2.putText(frame, "Energy linked", (10, 30),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 220), 2, cv2.LINE_AA)
@@ -313,7 +325,8 @@ def main() -> None:
                         hue   = (FINGER_BASE_HUES[fi] + t_elapsed * HUE_DRIFT_SPEED) % 360
                         color = hsv_to_bgr(hue)
                         draw_endpoint_orb(frame, overlay, pt, color,
-                                          base_radius=7, pulse=t_elapsed * 4 + fi)
+                                          base_radius=ORB_SPARK_RADIUS_PX,
+                                          pulse=t_elapsed * ORB_PULSE_SPEED + fi)
 
                 cv2.putText(frame, "Show both hands to channel energy",
                             (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7,
