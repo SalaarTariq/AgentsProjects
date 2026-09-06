@@ -31,6 +31,7 @@ RERANK_MODEL = "cross-encoder/ms-marco-MiniLM-L-6-v2"
 TOP_K_RETRIEVE = 12   # hybrid candidates before rerank
 TOP_K_FINAL = 6       # passages passed to the LLM
 MAX_CONTEXT_CHARS = 9000
+MIN_PASSAGE_BODY_CHARS = 200  # a passage that cannot fit this much body is dropped, not half-cited
 MAX_HISTORY_MESSAGES = 8  # last 4 user+assistant turns kept for rewrite and prompt
 DEFAULT_LLM_TEMPERATURE = 0.2   # answer generation — slight creativity, mostly grounded
 REWRITE_TEMPERATURE = 0.0       # query rewriting — deterministic, preserves legal terms
@@ -213,23 +214,36 @@ def retrieve(store: HybridStore, query: str, *, k_final: int = TOP_K_FINAL) -> l
     return rerank(query, candidates[: TOP_K_RETRIEVE * 2], k_final)
 
 
-def format_context(docs: list[Document]) -> str:
+def format_context(docs: list[Document]) -> tuple[str, list[Document]]:
+    """Render docs as numbered [n] passages within the context budget.
+
+    Returns the context alongside the docs that actually fit, so callers can
+    publish a citation list matching the [n] markers the model was given —
+    otherwise the UI offers authorities the model never saw.
+
+    A passage is admitted whole or trimmed to a still-substantive length. One
+    that cannot fit MIN_PASSAGE_BODY_CHARS of body is dropped outright rather
+    than handed over as a bare or half-written header, which would give the
+    model a citable slot backed by no evidence.
+    """
     parts: list[str] = []
+    used: list[Document] = []
     budget = MAX_CONTEXT_CHARS
-    for i, d in enumerate(docs, 1):
+    for d in docs:
         page = d.metadata.get("page")
         src = d.metadata.get("source", "uploaded.pdf")
         page_str = f" (page {page + 1})" if isinstance(page, int) else ""
-        header = f"[{i}] {src}{page_str}"
-        body = d.page_content.strip()
-        block = f"{header}\n{body}"
-        if budget - len(block) < 0:
-            block = block[: max(0, budget)]
-        parts.append(block)
-        budget -= len(block) + 2
-        if budget <= 0:
+        header = f"[{len(used) + 1}] {src}{page_str}"
+        # Header, its trailing newline, and the blank line joining it to the
+        # previous block — charged to the budget before any body text.
+        overhead = len(header) + 1 + (2 if parts else 0)
+        if budget - overhead < MIN_PASSAGE_BODY_CHARS:
             break
-    return "\n\n".join(parts)
+        body = d.page_content.strip()[: budget - overhead]
+        parts.append(f"{header}\n{body}")
+        used.append(d)
+        budget -= overhead + len(body)
+    return "\n\n".join(parts), used
 
 
 # ---------------------------------------------------------------------------
@@ -253,10 +267,10 @@ def answer_question(
 ) -> RAGAnswer:
     rewritten = rewrite_query(question, history)
     docs = retrieve(store, rewritten)
-    context = format_context(docs)
+    context, cited = format_context(docs)
     messages = _build_messages(mode, history, question, context)
     answer = get_llm().invoke(messages).content
-    return RAGAnswer(answer=str(answer), sources=docs, rewritten_query=rewritten)
+    return RAGAnswer(answer=str(answer), sources=cited, rewritten_query=rewritten)
 
 
 def stream_answer(
@@ -269,11 +283,12 @@ def stream_answer(
     """Returns (token_iterator, sources, rewritten_query).
 
     Sources are computed eagerly so the frontend can render the citation rail
-    before the answer finishes streaming.
+    before the answer finishes streaming, and are limited to the passages that
+    fit the context budget so the rail matches the answer's [n] markers.
     """
     rewritten = rewrite_query(question, history)
     docs = retrieve(store, rewritten)
-    context = format_context(docs)
+    context, cited = format_context(docs)
     messages = _build_messages(mode, history, question, context)
     llm = get_llm(streaming=True)
 
@@ -283,4 +298,4 @@ def stream_answer(
             if text:
                 yield str(text)
 
-    return gen(), docs, rewritten
+    return gen(), cited, rewritten
