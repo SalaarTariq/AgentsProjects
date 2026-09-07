@@ -273,10 +273,17 @@ def ask_stream(req: AskRequest):
     with s.lock:
         history_snapshot = list(s.history)
 
-    token_iter, docs, rewritten = stream_answer(
-        s.store, question, mode=req.mode, history=history_snapshot
-    )
-    sources = [_doc_to_source(d).model_dump() for d in docs]
+    # Rewrite, retrieval, reranking and LLM setup all run before the first byte
+    # ships, so a failure here can still be reported as a real status code with
+    # a readable detail — the same one /api/ask would give. Past this point the
+    # response has committed to 200 + SSE and errors go out as an `error` event.
+    try:
+        token_iter, docs, rewritten = stream_answer(
+            s.store, question, mode=req.mode, history=history_snapshot
+        )
+        sources = [_doc_to_source(d).model_dump() for d in docs]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error generating answer: {e}")
 
     def event_stream():
         # Emit metadata first so the UI can render the citation rail immediately.
