@@ -84,7 +84,12 @@ class ImageProcessor:
             except OSError:
                 font = ImageFont.load_default()
 
+        # textbbox reports the *ink* box relative to the draw origin, and its
+        # top-left is not (0, 0) — it starts at the ascender gap, which differs
+        # per string ("gypq" begins ~9px lower than "AWESOME" at 48px). Keep the
+        # offset so the draw call below can cancel it out.
         bbox = draw.textbbox((0, 0), text, font=font)
+        ink_dx, ink_dy = bbox[0], bbox[1]
         text_w = bbox[2] - bbox[0]
         text_h = bbox[3] - bbox[1]
 
@@ -113,7 +118,10 @@ class ImageProcessor:
         img = Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
 
         draw = ImageDraw.Draw(img)
-        draw.text((x, y), text, fill=color, font=font)
+        # Shift by the ink offset so the glyphs land in exactly the box the
+        # plate was drawn around. Passing (x, y) straight through anchors the
+        # layout origin instead, dropping the text ink_dy px inside its plate.
+        draw.text((x - ink_dx, y - ink_dy), text, fill=color, font=font)
 
         return img
 
