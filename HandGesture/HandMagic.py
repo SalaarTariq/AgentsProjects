@@ -293,7 +293,9 @@ def main() -> None:
                     p1 = per_hand_tips["Left"][fi]
                     p2 = per_hand_tips["Right"][fi]
 
-                    pkey, qkey = ("L", fi), ("R", fi)
+                    # Same ("Left"/"Right", finger) keys the prune below filters
+                    # on — an abbreviated key here would be dropped every frame.
+                    pkey, qkey = ("Left", fi), ("Right", fi)
                     motion = 0.0
                     if pkey in prev_tips and qkey in prev_tips:
                         motion = math.dist(p1, prev_tips[pkey]) + math.dist(p2, prev_tips[qkey])
