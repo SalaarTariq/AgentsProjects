@@ -1,6 +1,13 @@
 """Tests for ImageGenerator (non-network)."""
 
-from src.image_generator import ImageGenerator
+import pytest
+from PIL import Image
+
+from src.image_generator import (
+    AllProvidersExhaustedError,
+    ImageGenerator,
+    ProviderExhaustedError,
+)
 
 
 class TestClosestAspectRatio:
@@ -50,3 +57,50 @@ class TestProviderList:
         import time
         gen._failed_providers["pollinations"] = time.time()
         assert gen._is_provider_on_cooldown("pollinations") is True
+
+
+class TestBatchResilience:
+    """A provider dying partway through a batch must not discard earlier images.
+
+    Free tiers rate-limit mid-run routinely, and generate_images_node already
+    distinguishes an empty result from AllProvidersExhaustedError — so the
+    batch is expected to come back short rather than not at all.
+    """
+
+    @staticmethod
+    def _with_provider(fn):
+        gen = ImageGenerator()
+        gen.providers = [{"name": "stub", "fn": fn}]
+        return gen
+
+    @staticmethod
+    def _dies_after(n):
+        """Provider that serves n images, then is permanently rate-limited."""
+        served = {"n": 0}
+
+        def provider(prompt, size, seed_offset=0):
+            served["n"] += 1
+            if served["n"] <= n:
+                return Image.new("RGB", (8, 8), "red")
+            raise ProviderExhaustedError("stub rate limit")
+
+        return provider
+
+    def test_partial_batch_is_kept(self):
+        gen = self._with_provider(self._dies_after(4))
+        images = gen.generate("prompt", count=5, size=(8, 8))
+        assert len(images) == 4
+
+    def test_failure_on_last_image_still_returns_the_rest(self):
+        gen = self._with_provider(self._dies_after(1))
+        images = gen.generate("prompt", count=2, size=(8, 8))
+        assert len(images) == 1
+
+    def test_generating_nothing_still_raises(self):
+        gen = self._with_provider(self._dies_after(0))
+        with pytest.raises(AllProvidersExhaustedError):
+            gen.generate("prompt", count=3, size=(8, 8))
+
+    def test_healthy_provider_fills_the_batch(self):
+        gen = self._with_provider(lambda p, s, seed_offset=0: Image.new("RGB", (8, 8), "blue"))
+        assert len(gen.generate("prompt", count=3, size=(8, 8))) == 3

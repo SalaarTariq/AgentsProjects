@@ -46,15 +46,30 @@ class ImageGenerator:
         return providers
 
     def generate(self, prompt: str, count: int = 1, size: tuple = (1080, 1080)) -> list[Image.Image]:
-        images = []
+        """Generate up to `count` images, returning however many were produced.
+
+        Providers going down partway through a batch is the common case, not an
+        exceptional one — free tiers rate-limit mid-run. Images already in hand
+        are still good, so a partial batch comes back rather than being thrown
+        away. Only a batch that produced nothing at all raises.
+        """
+        images: list[Image.Image] = []
         for i in range(count):
             console.print(f"\n[bold]Generating image {i + 1}/{count}...[/]")
-            img = self._generate_single(prompt, size, seed_offset=i)
-            if img:
-                images.append(img)
-                console.print(f"[green]  Image {i + 1} generated successfully![/]")
-            else:
-                console.print(f"[red]  Failed to generate image {i + 1}[/]")
+            try:
+                img = self._generate_single(prompt, size, seed_offset=i)
+            except AllProvidersExhaustedError:
+                if not images:
+                    raise
+                # Every provider is now on cooldown, so the remaining images of
+                # this batch would only re-walk the same dead list.
+                console.print(
+                    f"[yellow]  Providers exhausted at image {i + 1}/{count} — "
+                    f"keeping the {len(images)} already generated.[/]"
+                )
+                break
+            images.append(img)
+            console.print(f"[green]  Image {i + 1} generated successfully![/]")
         return images
 
     def _is_provider_on_cooldown(self, name: str) -> bool:
@@ -66,7 +81,7 @@ class ImageGenerator:
             return False
         return True
 
-    def _generate_single(self, prompt: str, size: tuple, seed_offset: int = 0) -> Image.Image | None:
+    def _generate_single(self, prompt: str, size: tuple, seed_offset: int = 0) -> Image.Image:
         for provider in self.providers:
             if self._is_provider_on_cooldown(provider["name"]):
                 continue
