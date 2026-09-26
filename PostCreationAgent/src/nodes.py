@@ -265,7 +265,10 @@ def save_images_node(state: AgentState) -> dict:
     if caption:
         for path in paths:
             caption_path = path.with_suffix(".txt")
-            caption_path.write_text(caption)
+            # Explicit utf-8: captions come back from the LLM full of emoji, and
+            # the platform default encoding is cp1252 on a stock Windows install,
+            # which cannot represent them.
+            caption_path.write_text(caption, encoding="utf-8")
 
     console.print(f"  [green]Saved {len(paths)} image(s) to {config.OUTPUT_DIR}[/]")
     return {"saved_paths": paths, "status": "images_saved"}

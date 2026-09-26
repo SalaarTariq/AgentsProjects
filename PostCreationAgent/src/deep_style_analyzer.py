@@ -465,7 +465,7 @@ class DeepStyleAnalyzer:
         if not cp.exists():
             return None
         try:
-            data = json.loads(cp.read_text())
+            data = json.loads(cp.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             return None
         if data.get("fingerprint") != self._cache_fingerprint(image_paths):
@@ -485,7 +485,7 @@ class DeepStyleAnalyzer:
             "result": self._profile_to_dict(profile),
         }
         try:
-            self._cache_path().write_text(json.dumps(payload, indent=2))
+            self._cache_path().write_text(json.dumps(payload, indent=2), encoding="utf-8")
         except OSError as exc:
             logger.warning("Failed to write deep cache: %s", exc)
 
