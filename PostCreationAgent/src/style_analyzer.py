@@ -7,6 +7,11 @@ from rich.console import Console
 
 console = Console()
 
+# Shared by the pixel subsample and KMeans. Both have to be pinned: seeding only
+# the clusterer still lets an unseeded sample hand it different pixels each run,
+# which is enough to reshuffle the palette.
+RANDOM_SEED = 42
+
 
 @dataclass
 class StyleProfile:
@@ -54,17 +59,20 @@ class StyleAnalyzer:
 
         combined_pixels = np.vstack(all_colors)
         sample_size = min(50000, len(combined_pixels))
-        indices = np.random.choice(len(combined_pixels), sample_size, replace=False)
+        rng = np.random.default_rng(RANDOM_SEED)
+        indices = rng.choice(len(combined_pixels), sample_size, replace=False)
         sampled = combined_pixels[indices]
 
         n_clusters = 6
-        kmeans = KMeans(n_clusters=n_clusters, n_init=10, random_state=42)
+        kmeans = KMeans(n_clusters=n_clusters, n_init=10, random_state=RANDOM_SEED)
         kmeans.fit(sampled)
 
         centers = kmeans.cluster_centers_.astype(int)
         labels = kmeans.labels_
         counts = np.bincount(labels)
-        sorted_indices = np.argsort(-counts)
+        # Stable sort: clusters of equal size must not swap places between runs,
+        # since palette order drives the style prompt and the keyword pick.
+        sorted_indices = np.argsort(-counts, kind="stable")
 
         dominant_colors = [tuple(int(v) for v in centers[i]) for i in sorted_indices]
         color_palette = [self._rgb_to_hex(c) for c in dominant_colors]
