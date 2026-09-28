@@ -285,6 +285,14 @@ def ask_stream(req: AskRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error generating answer: {e}")
 
+    def record_turn(chunks: list[str]) -> None:
+        """Commit the exchange to session history, if anything was produced."""
+        if not chunks:
+            return
+        with s.lock:
+            s.history.append({"role": "user", "content": question})
+            s.history.append({"role": "assistant", "content": "".join(chunks)})
+
     def event_stream():
         # Emit metadata first so the UI can render the citation rail immediately.
         yield "event: meta\ndata: " + json.dumps(
@@ -295,13 +303,23 @@ def ask_stream(req: AskRequest):
             for token in token_iter:
                 chunks.append(token)
                 yield "event: token\ndata: " + json.dumps({"t": token}) + "\n\n"
+        except GeneratorExit:
+            # The browser hung up — the Stop button aborts the fetch. It keeps
+            # the partial answer on screen under a "stopped" marker, so the
+            # server has to remember the turn too: otherwise the next question
+            # is rewritten against a history missing an exchange the user can
+            # still see, and a follow-up like "expand on that" loses its
+            # referent. GeneratorExit is a BaseException, so the handler below
+            # never saw this.
+            record_turn(chunks)
+            raise
         except Exception as e:
+            # Deliberately not recorded: the client replaces the body with the
+            # error text and drops the partial, so storing it would desync the
+            # other way.
             yield "event: error\ndata: " + json.dumps({"detail": str(e)}) + "\n\n"
             return
-        full = "".join(chunks)
-        with s.lock:
-            s.history.append({"role": "user", "content": question})
-            s.history.append({"role": "assistant", "content": full})
+        record_turn(chunks)
         yield "event: done\ndata: {}\n\n"
 
     return StreamingResponse(
