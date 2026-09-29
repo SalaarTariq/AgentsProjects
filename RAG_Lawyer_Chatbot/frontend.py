@@ -94,9 +94,13 @@ if prompt:
         with st.chat_message("assistant"):
             with st.spinner("Consulting the record…"):
                 try:
+                    # [:-1] drops the question just appended above. Entries
+                    # flagged `excluded` are failed exchanges: still on screen
+                    # for the user, but never replayed to the model.
                     history = [
                         {"role": m["role"], "content": m["content"]}
                         for m in st.session_state.messages[:-1]
+                        if not m.get("excluded")
                     ]
                     result = answer_question(
                         st.session_state.store, prompt, mode=mode, history=history
@@ -133,6 +137,14 @@ if prompt:
                 except Exception as e:
                     err = f"Error generating answer: {e}"
                     st.error(err)
+                    # Keep the failed exchange visible, but out of the record.
+                    # Replaying it would hand the model a fabricated turn in
+                    # which it said "Error generating answer: ...", which then
+                    # feeds both rewrite_query and the answer prompt on every
+                    # later question -- so one timeout poisons the whole
+                    # conversation. The FastAPI app stores nothing on failure;
+                    # this matches it.
+                    st.session_state.messages[-1]["excluded"] = True
                     st.session_state.messages.append(
-                        {"role": "assistant", "content": err}
+                        {"role": "assistant", "content": err, "excluded": True}
                     )
