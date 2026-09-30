@@ -162,6 +162,7 @@ class DeepStyleAnalyzer:
     _model = None
     _processor = None
     _device = None
+    _loaded_model_name: str | None = None
 
     def __init__(
         self,
@@ -179,7 +180,13 @@ class DeepStyleAnalyzer:
     # ── Model loading (singleton, lazy) ──────────────────────────────
 
     def _ensure_model(self) -> None:
-        if DeepStyleAnalyzer._model is not None:
+        # The singleton is keyed on the checkpoint, not merely on "something is
+        # loaded". Without that, the first analyzer to run pins the model for
+        # the whole process and a later CLIP_MODEL setting is silently ignored.
+        if (
+            DeepStyleAnalyzer._model is not None
+            and DeepStyleAnalyzer._loaded_model_name == self.model_name
+        ):
             return
 
         import torch
@@ -193,6 +200,7 @@ class DeepStyleAnalyzer:
         DeepStyleAnalyzer._model = CLIPModel.from_pretrained(self.model_name).to(device)
         DeepStyleAnalyzer._model.eval()
         DeepStyleAnalyzer._device = device
+        DeepStyleAnalyzer._loaded_model_name = self.model_name
 
         console.print("[green]CLIP model loaded.[/]")
 
@@ -455,7 +463,10 @@ class DeepStyleAnalyzer:
 
     def _cache_fingerprint(self, image_paths: list[Path]) -> str:
         combined = "|".join(sorted(_file_hash(p) for p in image_paths))
-        return hashlib.sha256(combined.encode()).hexdigest()
+        # The checkpoint belongs in the key too: the same images scored by a
+        # different CLIP model are different results, and without this a switch
+        # of CLIP_MODEL reads back the previous model's profile as a cache hit.
+        return hashlib.sha256(f"{self.model_name}|{combined}".encode()).hexdigest()
 
     def _cache_path(self) -> Path:
         return self.cache_dir / "deep_style_cache.json"
