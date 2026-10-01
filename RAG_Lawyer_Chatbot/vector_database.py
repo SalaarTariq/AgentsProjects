@@ -51,15 +51,24 @@ def get_embeddings() -> HuggingFaceEmbeddings:
     return _embeddings
 
 
+# Markers short enough to sit inside ordinary words need word boundaries.
+# Bare "v." matches Nov., Rev., Gov. and Univ., and because the case test runs
+# before statute and memo, any document carrying a date or an abbreviation was
+# labelled a case. Bare "re:" likewise matches "therefore:".
+_CASE_CAPTION_RE = re.compile(r"\bv\.\s")      # "Roe v. Wade", not "Nov. 3"
+_MEMO_HEADER_RE = re.compile(r"\b(?:to|from|re):")
+
+
 def _classify_doc_type(text_sample: str) -> str:
     t = text_sample.lower()
     if any(k in t for k in ("witnesseth", "this agreement", "hereinafter", "party of the first part")):
         return "contract"
-    if any(k in t for k in ("plaintiff", "defendant", "appellant", "v.", "complaint", "indictment")):
+    if any(k in t for k in ("plaintiff", "defendant", "appellant", "complaint", "indictment")) \
+            or _CASE_CAPTION_RE.search(t):
         return "case"
     if any(k in t for k in ("be it enacted", "public law", "u.s.c.", "section ", "subsection")):
         return "statute"
-    if any(k in t for k in ("memorandum", "to:", "from:", "re:")):
+    if "memorandum" in t or _MEMO_HEADER_RE.search(t):
         return "memo"
     return "document"
 
