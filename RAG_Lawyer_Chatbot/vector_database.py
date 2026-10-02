@@ -73,12 +73,27 @@ def _classify_doc_type(text_sample: str) -> str:
     return "document"
 
 
+# Bluebook signals and sentence openers sit immediately before a caption and
+# are capitalised just like a party name, so a run of capitals grabbed leftward
+# of " v. " swallows them — "See Roe v. Wade" rather than "Roe v. Wade". Matched
+# and discarded here so the capture starts at the real first party.
+_CASE_SIGNAL = (
+    r"See\s+also|See|Accord|Cf|Compare|Contra|But|In|The|And|Also|Under|Per|"
+    r"Citing|Quoting|Following|Overruling|Affirming|Reversing|Quoted|Citied"
+)
+
+# A party name: capitalised words, optionally joined by "of"/"and" so
+# "Board of Education" survives whole. "the" is deliberately excluded — it
+# almost always opens the clause after the caption ("... the Court held").
+_PARTY = r"[A-Z][a-z]+(?:\s+(?:of|and)\s+[A-Z][a-z]+|\s+[A-Z][a-z]+)*"
+
 _CITATION_RE = re.compile(
     r"(\b\d+\s+U\.S\.C\.\s+§?\s*\d+[a-z\-]*)"     # 42 U.S.C. § 1983
     r"|(\b\d+\s+U\.S\.\s+\d+)"                    # 410 U.S. 113
     r"|(\b\d+\s+S\.\s*Ct\.\s+\d+)"                # 113 S. Ct. 2786
     r"|(\bArt(?:icle)?\.?\s+[IVXLCDM\d]+)"        # Article III
-    r"|(\b[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*\s+v\.\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)",  # Roe v. Wade
+    r"|(?:\b(?:" + _CASE_SIGNAL + r")\s+)?"         # dropped, not captured
+    r"(\b" + _PARTY + r"\s+v\.\s+" + _PARTY + r")",   # Roe v. Wade
 )
 
 
