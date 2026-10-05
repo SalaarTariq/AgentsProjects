@@ -38,19 +38,47 @@
       <section class="side-section">
         <div class="side-title">Mode</div>
         <div class="mode-grid" role="radiogroup" aria-label="Answer mode">
-          <button class="mode-btn active" data-mode="brief">
+          <button
+            type="button"
+            class="mode-btn active"
+            data-mode="brief"
+            role="radio"
+            aria-checked="true"
+            tabindex="0"
+          >
             <strong>Legal Brief</strong>
             <span>IRAC + risk + next steps</span>
           </button>
-          <button class="mode-btn" data-mode="quick">
+          <button
+            type="button"
+            class="mode-btn"
+            data-mode="quick"
+            role="radio"
+            aria-checked="false"
+            tabindex="-1"
+          >
             <strong>Quick Answer</strong>
             <span>Plain-English in seconds</span>
           </button>
-          <button class="mode-btn" data-mode="drafting">
+          <button
+            type="button"
+            class="mode-btn"
+            data-mode="drafting"
+            role="radio"
+            aria-checked="false"
+            tabindex="-1"
+          >
             <strong>Drafting</strong>
             <span>Clause / letter / motion</span>
           </button>
-          <button class="mode-btn" data-mode="compare">
+          <button
+            type="button"
+            class="mode-btn"
+            data-mode="compare"
+            role="radio"
+            aria-checked="false"
+            tabindex="-1"
+          >
             <strong>Compare</strong>
             <span>Side-by-side analysis</span>
           </button>

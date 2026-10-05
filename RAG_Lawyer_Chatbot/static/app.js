@@ -39,7 +39,17 @@ function setStatus(text, kind = "") {
 function setMode(m) {
   mode = m;
   localStorage.setItem(MODE_KEY, m);
-  modeBtns.forEach((b) => b.classList.toggle("active", b.dataset.mode === m));
+  modeBtns.forEach((b) => {
+    const on = b.dataset.mode === m;
+    b.classList.toggle("active", on);
+    // The group is a radiogroup, so the selection has to live in aria-checked
+    // too — a CSS class alone leaves assistive tech with four identical
+    // buttons and no way to tell which mode is in force.
+    b.setAttribute("aria-checked", String(on));
+    // Roving tabindex: a radiogroup takes one Tab stop, then arrow keys move
+    // within it (see the keydown handler where the buttons are wired up).
+    b.tabIndex = on ? 0 : -1;
+  });
 }
 
 function escapeHtml(s) {
@@ -322,7 +332,19 @@ clearHistoryBtn.addEventListener("click", async () => {
 
 // ───────────────────────────────── modes ─────────────────────────────────
 
-modeBtns.forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
+const ARROW_STEP = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 };
+
+modeBtns.forEach((b, i) => {
+  b.addEventListener("click", () => setMode(b.dataset.mode));
+  b.addEventListener("keydown", (e) => {
+    const step = ARROW_STEP[e.key];
+    if (step === undefined) return;
+    e.preventDefault();
+    const next = modeBtns[(i + step + modeBtns.length) % modeBtns.length];
+    setMode(next.dataset.mode);
+    next.focus();
+  });
+});
 setMode(mode);
 
 promptCards.forEach((c) =>
