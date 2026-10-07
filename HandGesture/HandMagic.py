@@ -12,6 +12,7 @@ Controls:     's' = save snapshot, 'h' = toggle skeleton, 'q' = quit
 import argparse
 import colorsys
 import math
+import os
 import random
 import time
 
@@ -106,6 +107,23 @@ def hsv_to_bgr(h_deg: float, s: float = 1.0, v: float = 1.0) -> tuple:
     """HSV (h in degrees 0-360) → BGR uint8 tuple. Uses colorsys — no numpy overhead."""
     r, g, b = colorsys.hsv_to_rgb((h_deg / 360.0) % 1.0, s, v)
     return int(b * 255), int(g * 255), int(r * 255)
+
+
+def next_screenshot_path(prefix: str, now: float) -> str:
+    """First free "<prefix>_<unix seconds>[-n].png" for this moment.
+
+    int(now) only resolves to the second, so two presses a few frames apart
+    built the same name and the later snapshot quietly replaced the earlier
+    one. Probing for a free name also leaves snapshots from an earlier run
+    alone.
+    """
+    stem = f"{prefix}_{int(now)}"
+    candidate = f"{stem}.png"
+    n = 2
+    while os.path.exists(candidate):
+        candidate = f"{stem}-{n}.png"
+        n += 1
+    return candidate
 
 
 def landmark_to_px(landmark, w: int, h: int) -> tuple:
@@ -231,6 +249,7 @@ def main() -> None:
     show_skeleton       = True
     save_msg            = ""
     save_msg_time       = 0.0
+    save_ok             = True
 
     # Allocated on first frame once dimensions are known
     overlay = None
@@ -344,7 +363,8 @@ def main() -> None:
                         cv2.FONT_HERSHEY_SIMPLEX, 0.6, (160, 160, 160), 1, cv2.LINE_AA)
             if save_msg and now - save_msg_time < SAVE_MSG_DURATION_S:
                 cv2.putText(frame, save_msg, (10, h - 20),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2, cv2.LINE_AA)
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.6,
+                            (0, 255, 0) if save_ok else (0, 0, 255), 2, cv2.LINE_AA)
 
             cv2.imshow(window_name, frame)
             key = cv2.waitKey(1) & 0xFF
@@ -353,9 +373,12 @@ def main() -> None:
             elif key == ord('h'):
                 show_skeleton = not show_skeleton
             elif key == ord('s'):
-                fname         = f"{SCREENSHOT_FILE_PREFIX}_{int(now)}.png"
-                cv2.imwrite(fname, frame)
-                save_msg      = f"Saved {fname}"
+                fname         = next_screenshot_path(SCREENSHOT_FILE_PREFIX, now)
+                # imwrite signals failure by return value rather than raising,
+                # so without this a read-only directory or a full disk still
+                # announced "Saved".
+                save_ok       = bool(cv2.imwrite(fname, frame))
+                save_msg      = f"Saved {fname}" if save_ok else f"Could not save {fname}"
                 save_msg_time = now
                 print(save_msg)
 
