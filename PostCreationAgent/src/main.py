@@ -193,12 +193,29 @@ def cmd_batch(agent: PostCreationAgent):
     console.print(f"\n[bold]Generating {len(prompts)} posts...[/]\n")
 
     all_paths = []
+    failures: list[tuple[str, str]] = []
     for i, prompt in enumerate(prompts):
         console.print(f"\n[bold]--- Post {i + 1}/{len(prompts)} ---[/]")
-        paths = agent.create_post(prompt=prompt, count=1, post_type=post_type)
+        try:
+            paths = agent.create_post(prompt=prompt, count=1, post_type=post_type)
+        except Exception as exc:
+            # The prompts in a batch are independent, so one failing is no
+            # reason to abandon the queue behind it — and letting it escape
+            # here would also take the interactive loop in main() down with it.
+            console.print(f"[red]  Post {i + 1} failed: {exc}[/]")
+            failures.append((prompt, str(exc)))
+            continue
         all_paths.extend(paths)
 
-    console.print(f"\n[bold green]Batch complete! Generated {len(all_paths)} images total.[/]")
+    succeeded = len(prompts) - len(failures)
+    console.print(
+        f"\n[bold green]Batch complete! Generated {len(all_paths)} image(s) "
+        f"from {succeeded}/{len(prompts)} prompt(s).[/]"
+    )
+    if failures:
+        console.print(f"[yellow]{len(failures)} prompt(s) failed:[/]")
+        for prompt, err in failures:
+            console.print(f"  [yellow]- {prompt}: {err}[/]")
 
 
 def main():
