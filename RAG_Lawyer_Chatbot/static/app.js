@@ -392,6 +392,28 @@ form.addEventListener("submit", async (e) => {
   let firstToken = true;
   let buffer = "";
 
+  // Tokens land far faster than the screen refreshes, and each render
+  // re-parses the whole answer so far — so painting per token costs time
+  // quadratic in the answer's length. Coalesce into one paint per animation
+  // frame; the frames a viewer actually sees are identical.
+  let renderHandle = null;
+
+  function paintAnswer() {
+    renderHandle = null;
+    body.innerHTML = linkifyCitations(renderMarkdown(buffer), aiMsg);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  function scheduleAnswerPaint() {
+    if (renderHandle === null) renderHandle = requestAnimationFrame(paintAnswer);
+  }
+
+  function cancelAnswerPaint() {
+    if (renderHandle === null) return;
+    cancelAnimationFrame(renderHandle);
+    renderHandle = null;
+  }
+
   currentAbortController = new AbortController();
   setSending(true);
 
@@ -426,6 +448,8 @@ form.addEventListener("submit", async (e) => {
     }
   } catch (err) {
     body.classList.remove("streaming");
+    // Drop any queued paint first, or it would clobber the text set below.
+    cancelAnswerPaint();
     if (err.name === "AbortError") {
       // User pressed Stop — keep partial answer, append a marker.
       body.innerHTML = linkifyCitations(renderMarkdown(buffer), aiMsg) +
@@ -464,14 +488,17 @@ form.addEventListener("submit", async (e) => {
       }
       buffer += payload.t || "";
       aiMsg._markdown = buffer;
-      body.innerHTML = linkifyCitations(renderMarkdown(buffer), aiMsg);
-      chat.scrollTop = chat.scrollHeight;
+      scheduleAnswerPaint();
     } else if (event === "done") {
       body.classList.remove("streaming");
       aiMsg._markdown = buffer;
-      body.innerHTML = linkifyCitations(renderMarkdown(buffer), aiMsg);
+      // Paint the finished answer immediately rather than waiting a frame —
+      // and requestAnimationFrame does not fire at all in a background tab.
+      cancelAnswerPaint();
+      paintAnswer();
     } else if (event === "error") {
       body.classList.remove("streaming");
+      cancelAnswerPaint();
       body.innerHTML = `<span style="color: var(--error)">${escapeHtml(payload.detail || "Stream error")}</span>`;
     }
   }
