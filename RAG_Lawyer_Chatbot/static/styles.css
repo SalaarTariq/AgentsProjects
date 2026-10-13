@@ -610,3 +610,31 @@ body.dragging::after {
   .mode-grid { grid-template-columns: 1fr 1fr; }
   .prompt-grid { grid-template-columns: 1fr; }
 }
+
+/* ── Reduced motion ──────────────────────────────────────────────────────
+   Two animations here are `infinite`: the streaming cursor blinks for as long
+   as the answer takes to arrive, and the thinking dots cycle for the whole
+   wait. A legal brief streams for well over the five seconds WCAG 2.2.2 allows
+   automatic motion to run without a way to stop it, and nothing in the UI
+   offers one. Honour the system preference instead.
+
+   Stopping them costs no information: .streaming::after still shows its block
+   cursor and .thinking::after falls back to the static "…" in its base rule,
+   so both states still read as active — they simply hold still. */
+@media (prefers-reduced-motion: reduce) {
+  .streaming::after,
+  .thinking::after {
+    animation: none;
+  }
+
+  /* The hover and press transitions are short, but the preference is a blanket
+     request for less motion, not a request to audit each duration. */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
