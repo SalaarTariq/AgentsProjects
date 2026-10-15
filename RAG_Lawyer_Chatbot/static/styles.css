@@ -501,12 +501,43 @@ body {
   font-size: 15px;
   padding: 6px 10px;
   color: var(--text);
+  /* Borderless by design — the composer around it carries the focus
+     indicator (see .composer:focus-within below). */
   outline: none;
   resize: none;
   max-height: 180px;
   line-height: 1.5;
 }
 .composer textarea::placeholder { color: var(--muted-2); }
+
+/* ── Focus visibility (WCAG 2.4.7) ───────────────────────────────────────
+   The composer's textarea sets outline: none and nothing replaced it, so a
+   keyboard user tabbing into the question field had no indication at all of
+   where they were. The field is borderless inside a bordered composer, so the
+   indicator belongs on the wrapper. :focus-within rather than :focus-visible
+   here on purpose: for a text input the caret is the only other cue, and it is
+   easy to lose on a long page, so the ring is worth showing for pointer focus
+   too.
+
+   --gold measures 4.88:1 on --surface, 4.64:1 on --surface-2 and 4.40:1 on
+   --bg, all clear of the 3:1 that WCAG 1.4.11 asks of a non-text indicator. */
+.composer:focus-within {
+  border-color: var(--gold);
+  box-shadow: var(--shadow), 0 0 0 3px rgba(201, 164, 74, 0.35);
+}
+
+/* The remaining controls were never stripped of the user agent's ring, but
+   leaving it to the UA means a blue default over a cream palette. Stating it
+   keeps the indicator consistent and survives any later outline reset. */
+.btn:focus-visible,
+.mode-btn:focus-visible,
+.prompt-card:focus-visible,
+.sample-btn:focus-visible,
+.copy-btn:focus-visible,
+.cite:focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 2px;
+}
 
 /* Streaming cursor */
 .streaming::after {
